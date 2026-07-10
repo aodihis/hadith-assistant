@@ -1,1 +1,5 @@
 /target
+
+# Local source data artifacts. Keep these out of Git unless licensing is reviewed.
+/data/imports/*
+!/data/imports/.gitkeep
