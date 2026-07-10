@@ -34,14 +34,16 @@ CREATE TABLE hadiths (
     CONSTRAINT hadiths_hadith_number_not_empty CHECK (length(btrim(hadith_number)) > 0),
     CONSTRAINT hadiths_arabic_text_not_empty CHECK (length(btrim(arabic_text)) > 0),
     CONSTRAINT hadiths_arabic_urn_positive CHECK (arabic_urn > 0),
-    CONSTRAINT hadiths_english_urn_positive CHECK (english_urn > 0)
+    CONSTRAINT hadiths_english_urn_positive CHECK (english_urn > 0),
+    CONSTRAINT hadiths_collection_book_hadith_unique UNIQUE (
+        collection_id,
+        book_number,
+        hadith_number
+    )
 );
 
 CREATE INDEX hadiths_collection_book_idx
     ON hadiths (collection_id, book_number);
-
-CREATE INDEX hadiths_collection_hadith_number_idx
-    ON hadiths (collection_id, hadith_number);
 
 CREATE INDEX hadiths_arabic_grade_idx
     ON hadiths (arabic_grade);

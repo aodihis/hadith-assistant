@@ -101,6 +101,14 @@ query input
 
 Do not mix prompt assembly, vector retrieval, database filtering, and HTTP formatting in one function.
 
+### TODO Policy For Unimplemented Features
+
+When adding a feature boundary before the implementation exists, add an explicit
+`TODO` at the service or domain function that owns the missing behavior.
+
+The placeholder must return a clear not-implemented error instead of fake data,
+silent fallback behavior, or a misleading empty success response.
+
 ## Data Model Guidance
 
 Hadith records should be modeled with enough metadata to support precise retrieval and citation:
