@@ -7,6 +7,14 @@ use thiserror::Error;
 pub struct Config {
     pub database_url: String,
     pub server_addr: SocketAddr,
+    pub vector: VectorConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct VectorConfig {
+    pub provider: String,
+    pub qdrant_url: String,
+    pub qdrant_collection: String,
 }
 
 #[derive(Debug, Error)]
@@ -48,7 +56,20 @@ impl Config {
         Ok(Self {
             database_url,
             server_addr: SocketAddr::new(host, port),
+            vector: VectorConfig::from_env(),
         })
+    }
+}
+
+impl VectorConfig {
+    fn from_env() -> Self {
+        Self {
+            provider: env::var("VECTOR_DB_PROVIDER").unwrap_or_else(|_| "qdrant".to_owned()),
+            qdrant_url: env::var("QDRANT_URL")
+                .unwrap_or_else(|_| "http://localhost:6333".to_owned()),
+            qdrant_collection: env::var("QDRANT_COLLECTION")
+                .unwrap_or_else(|_| "hadith_vectors".to_owned()),
+        }
     }
 }
 
@@ -57,6 +78,11 @@ impl Default for Config {
         Self {
             database_url: String::new(),
             server_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 3000),
+            vector: VectorConfig {
+                provider: "qdrant".to_owned(),
+                qdrant_url: "http://localhost:6333".to_owned(),
+                qdrant_collection: "hadith_vectors".to_owned(),
+            },
         }
     }
 }

@@ -13,7 +13,7 @@ PostgreSQL
   hadiths              one row per Hadith JSON record
 
 External vector database
-  embeddings           vectors keyed back to PostgreSQL hadiths.id or Hadith reference
+  Qdrant               vectors keyed back to PostgreSQL hadiths.id or Hadith reference
 ```
 
 The vector database is an index, not the source of truth. The canonical Arabic
@@ -89,6 +89,7 @@ Still missing:
 Implemented:
 
 - Environment config in `src/config.rs`.
+- Qdrant vector backend config defaults in `src/config.rs`.
 - Shared `AppState` in `src/state.rs`.
 - PostgreSQL connection pool startup in `src/main.rs`.
 - Application error mapping in `src/error.rs`.
@@ -107,6 +108,8 @@ Implemented:
 - Thin Axum route handlers.
 - Validation in services before repository calls.
 - Unit tests for validation and error behavior.
+- HTTP routes are read-only for canonical data because writes happen through
+  the CLI import path.
 
 Still missing:
 
@@ -136,13 +139,15 @@ Implemented:
 - Service validates request shape.
 - Service returns `501 Not Implemented`.
 - Missing retrieval behavior is marked with an explicit `TODO`.
+- Qdrant is selected as the vector database provider.
+- Qdrant config variables are defined:
+  `VECTOR_DB_PROVIDER`, `QDRANT_URL`, and `QDRANT_COLLECTION`.
 
 Still missing:
 
-- Choose the external vector database.
 - Define vector record metadata.
 - Generate chunks or embedding input outside the canonical schema.
-- Store embeddings externally.
+- Store embeddings in Qdrant.
 - Resolve vector matches back to Hadith records.
 - Add retrieval tests for scope filtering, no-result behavior, and citations.
 

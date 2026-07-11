@@ -1,6 +1,6 @@
 use sqlx::PgPool;
 
-use crate::domain::{Collection, NewCollection};
+use crate::domain::Collection;
 use crate::error::AppError;
 use crate::repositories::collections::CollectionRepository;
 
@@ -24,33 +24,6 @@ impl CollectionService {
         validate_slug(slug)?;
         self.repository.find_by_slug(slug.trim()).await
     }
-
-    pub async fn create(&self, input: NewCollection) -> Result<Collection, AppError> {
-        let input = validate_collection(input)?;
-        self.repository.create(&input).await
-    }
-
-    pub async fn update(
-        &self,
-        current_slug: &str,
-        input: NewCollection,
-    ) -> Result<Collection, AppError> {
-        validate_slug(current_slug)?;
-        let input = validate_collection(input)?;
-        self.repository.update(current_slug.trim(), &input).await
-    }
-
-    pub async fn delete(&self, slug: &str) -> Result<(), AppError> {
-        validate_slug(slug)?;
-        self.repository.delete(slug.trim()).await
-    }
-}
-
-fn validate_collection(input: NewCollection) -> Result<NewCollection, AppError> {
-    let slug = required("slug", &input.slug)?;
-    let name = required("name", &input.name)?;
-
-    Ok(NewCollection { slug, name })
 }
 
 fn validate_slug(slug: &str) -> Result<(), AppError> {
@@ -71,46 +44,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn validate_collection_trims_slug_and_name() {
-        let collection = validate_collection(NewCollection {
-            slug: " bukhari ".to_owned(),
-            name: " Sahih al-Bukhari ".to_owned(),
-        })
-        .expect("valid collection should normalize");
-
-        assert_eq!(collection.slug, "bukhari");
-        assert_eq!(collection.name, "Sahih al-Bukhari");
-    }
-
-    #[test]
-    fn validate_collection_rejects_blank_slug() {
-        let error = validate_collection(NewCollection {
-            slug: " ".to_owned(),
-            name: "Sahih al-Bukhari".to_owned(),
-        })
-        .expect_err("blank slug should fail");
-
-        assert!(matches!(
-            error,
-            AppError::Validation(message) if message == "slug is required"
-        ));
-    }
-
-    #[test]
-    fn validate_collection_rejects_blank_name() {
-        let error = validate_collection(NewCollection {
-            slug: "bukhari".to_owned(),
-            name: " ".to_owned(),
-        })
-        .expect_err("blank name should fail");
-
-        assert!(matches!(
-            error,
-            AppError::Validation(message) if message == "name is required"
-        ));
-    }
-
-    #[test]
     fn validate_slug_rejects_blank_slug() {
         let error = validate_slug(" ").expect_err("blank slug should fail");
 
@@ -118,5 +51,10 @@ mod tests {
             error,
             AppError::Validation(message) if message == "slug is required"
         ));
+    }
+
+    #[test]
+    fn validate_slug_accepts_and_trims_non_blank_slug() {
+        validate_slug(" bukhari ").expect("non-blank slug should pass");
     }
 }

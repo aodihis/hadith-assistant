@@ -1,6 +1,6 @@
 use sqlx::PgPool;
 
-use crate::domain::{Hadith, HadithInput, HadithSearch};
+use crate::domain::{Hadith, HadithSearch};
 use crate::error::AppError;
 use crate::repositories::hadiths::HadithRepository;
 
@@ -42,20 +42,6 @@ impl HadithService {
             .find_by_reference(&collection, &book_number, &hadith_number)
             .await
     }
-
-    pub async fn create(&self, input: HadithInput) -> Result<Hadith, AppError> {
-        self.repository.create(&validate_hadith(input)?).await
-    }
-
-    pub async fn update(&self, id: i64, input: HadithInput) -> Result<Hadith, AppError> {
-        validate_id(id)?;
-        self.repository.update(id, &validate_hadith(input)?).await
-    }
-
-    pub async fn delete(&self, id: i64) -> Result<(), AppError> {
-        validate_id(id)?;
-        self.repository.delete(id).await
-    }
 }
 
 fn validate_search(search: HadithSearch) -> Result<HadithSearch, AppError> {
@@ -84,46 +70,6 @@ fn validate_search(search: HadithSearch) -> Result<HadithSearch, AppError> {
         grade: trim_optional(search.grade),
         limit,
         offset: search.offset,
-    })
-}
-
-fn validate_hadith(input: HadithInput) -> Result<HadithInput, AppError> {
-    let collection_slug = required("collection_slug", &input.collection_slug)?;
-    let book_number = required("book_number", &input.book_number)?;
-    let hadith_number = required("hadith_number", &input.hadith_number)?;
-    let arabic_text = required("arabic_text", &input.arabic_text)?;
-
-    if input.arabic_urn <= 0 {
-        return Err(AppError::Validation(
-            "arabic_urn must be greater than 0".to_owned(),
-        ));
-    }
-
-    if input.english_urn <= 0 {
-        return Err(AppError::Validation(
-            "english_urn must be greater than 0".to_owned(),
-        ));
-    }
-
-    Ok(HadithInput {
-        collection_slug,
-        book_number,
-        bab_id: input.bab_id,
-        english_bab_number: trim_optional(input.english_bab_number),
-        arabic_bab_number: trim_optional(input.arabic_bab_number),
-        hadith_number,
-        our_hadith_number: input.our_hadith_number,
-        arabic_urn: input.arabic_urn,
-        arabic_bab_name: trim_optional(input.arabic_bab_name),
-        arabic_text,
-        arabic_transliteration: trim_optional(input.arabic_transliteration),
-        arabic_grade: input.arabic_grade.trim().to_owned(),
-        english_urn: input.english_urn,
-        english_bab_name: trim_optional(input.english_bab_name),
-        english_text: trim_optional(input.english_text),
-        english_grade: input.english_grade.trim().to_owned(),
-        last_updated: trim_optional(input.last_updated),
-        xrefs: input.xrefs.trim().to_owned(),
     })
 }
 
@@ -224,76 +170,6 @@ mod tests {
     }
 
     #[test]
-    fn validate_hadith_trims_required_and_optional_fields() {
-        let hadith = validate_hadith(sample_hadith_input()).expect("valid Hadith should normalize");
-
-        assert_eq!(hadith.collection_slug, "bukhari");
-        assert_eq!(hadith.book_number, "1");
-        assert_eq!(hadith.hadith_number, "1");
-        assert_eq!(hadith.arabic_text, "arabic text");
-        assert_eq!(hadith.english_bab_number.as_deref(), Some("1"));
-        assert_eq!(hadith.arabic_bab_number, None);
-        assert_eq!(hadith.arabic_bab_name.as_deref(), Some("باب"));
-        assert_eq!(hadith.arabic_transliteration, None);
-        assert_eq!(hadith.arabic_grade, "صحيح");
-        assert_eq!(hadith.english_bab_name.as_deref(), Some("Chapter"));
-        assert_eq!(hadith.english_text, None);
-        assert_eq!(hadith.english_grade, "Sahih");
-        assert_eq!(hadith.last_updated.as_deref(), Some("2021-03-04 23:36:31"));
-        assert_eq!(hadith.xrefs, "");
-    }
-
-    #[test]
-    fn validate_hadith_rejects_missing_required_fields() {
-        for (field, mut input) in [
-            ("collection_slug", sample_hadith_input()),
-            ("book_number", sample_hadith_input()),
-            ("hadith_number", sample_hadith_input()),
-            ("arabic_text", sample_hadith_input()),
-        ] {
-            match field {
-                "collection_slug" => input.collection_slug = " ".to_owned(),
-                "book_number" => input.book_number = " ".to_owned(),
-                "hadith_number" => input.hadith_number = " ".to_owned(),
-                "arabic_text" => input.arabic_text = " ".to_owned(),
-                _ => unreachable!("test only covers known required fields"),
-            }
-
-            let error = validate_hadith(input).expect_err("required field should fail");
-            assert!(matches!(
-                error,
-                AppError::Validation(message) if message == format!("{field} is required")
-            ));
-        }
-    }
-
-    #[test]
-    fn validate_hadith_rejects_non_positive_arabic_urn() {
-        let mut input = sample_hadith_input();
-        input.arabic_urn = 0;
-
-        let error = validate_hadith(input).expect_err("invalid Arabic URN should fail");
-
-        assert!(matches!(
-            error,
-            AppError::Validation(message) if message == "arabic_urn must be greater than 0"
-        ));
-    }
-
-    #[test]
-    fn validate_hadith_rejects_non_positive_english_urn() {
-        let mut input = sample_hadith_input();
-        input.english_urn = 0;
-
-        let error = validate_hadith(input).expect_err("invalid English URN should fail");
-
-        assert!(matches!(
-            error,
-            AppError::Validation(message) if message == "english_urn must be greater than 0"
-        ));
-    }
-
-    #[test]
     fn validate_id_rejects_non_positive_id() {
         let error = validate_id(0).expect_err("non-positive id should fail");
 
@@ -306,28 +182,5 @@ mod tests {
     #[test]
     fn validate_id_accepts_positive_id() {
         validate_id(1).expect("positive id should be valid");
-    }
-
-    fn sample_hadith_input() -> HadithInput {
-        HadithInput {
-            collection_slug: " bukhari ".to_owned(),
-            book_number: " 1 ".to_owned(),
-            bab_id: 1.0,
-            english_bab_number: Some(" 1 ".to_owned()),
-            arabic_bab_number: Some(" ".to_owned()),
-            hadith_number: " 1 ".to_owned(),
-            our_hadith_number: 1,
-            arabic_urn: 100010,
-            arabic_bab_name: Some(" باب ".to_owned()),
-            arabic_text: " arabic text ".to_owned(),
-            arabic_transliteration: Some(" ".to_owned()),
-            arabic_grade: " صحيح ".to_owned(),
-            english_urn: 10,
-            english_bab_name: Some(" Chapter ".to_owned()),
-            english_text: Some(" ".to_owned()),
-            english_grade: " Sahih ".to_owned(),
-            last_updated: Some(" 2021-03-04 23:36:31 ".to_owned()),
-            xrefs: " ".to_owned(),
-        }
     }
 }

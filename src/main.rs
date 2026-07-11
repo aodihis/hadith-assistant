@@ -12,6 +12,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let config = Config::from_env()?;
+    tracing::info!(
+        provider = %config.vector.provider,
+        qdrant_url = %config.vector.qdrant_url,
+        qdrant_collection = %config.vector.qdrant_collection,
+        "vector backend configured"
+    );
+
     let pool = PgPoolOptions::new()
         .max_connections(10)
         .connect(&config.database_url)
