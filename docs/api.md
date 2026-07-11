@@ -9,6 +9,27 @@ The backend starts an Axum HTTP server using:
 - `QDRANT_URL`, optional, defaults to `http://localhost:6333`
 - `QDRANT_COLLECTION`, optional, defaults to `hadith_vectors`
 
+Create a local `.env` from the checked-in example:
+
+```bash
+cp .env.example .env
+```
+
+The server loads `.env` automatically at startup. Real `.env` files are ignored
+by Git.
+
+Start the local PostgreSQL and Qdrant services:
+
+```bash
+docker compose up -d postgres qdrant
+```
+
+PostgreSQL is exposed on `localhost:5433` to avoid colliding with a local
+PostgreSQL instance on the default `5432` port.
+
+Qdrant is available at `http://localhost:6333`, with the dashboard at
+`http://localhost:6333/dashboard`.
+
 Run:
 
 ```bash

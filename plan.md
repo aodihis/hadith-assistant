@@ -89,7 +89,12 @@ Still missing:
 Implemented:
 
 - Environment config in `src/config.rs`.
+- `.env` loading in the server and import CLI.
+- Checked-in `.env.example` for local setup.
 - Qdrant vector backend config defaults in `src/config.rs`.
+- Local PostgreSQL and Qdrant Docker setup in `docker-compose.yml`.
+- PostgreSQL uses host port `5433` to avoid colliding with local port `5432`.
+- Local Qdrant Dockerfile at `docker/qdrant/Dockerfile`.
 - Shared `AppState` in `src/state.rs`.
 - PostgreSQL connection pool startup in `src/main.rs`.
 - Application error mapping in `src/error.rs`.

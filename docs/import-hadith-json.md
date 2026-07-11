@@ -84,9 +84,12 @@ cargo run --bin import_hadiths -- data/imports/hadiths.json --validate-only
 Import into PostgreSQL:
 
 ```bash
-DATABASE_URL=postgres://user:password@localhost:5432/hadiths \
+docker compose up -d postgres
 cargo run --bin import_hadiths -- data/imports/hadiths.json
 ```
+
+The import CLI loads `DATABASE_URL` from `.env` automatically. You can still
+override it with an explicit argument:
 
 You can also pass the database URL as an argument:
 

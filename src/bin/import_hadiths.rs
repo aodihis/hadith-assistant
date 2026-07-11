@@ -17,6 +17,8 @@ async fn main() -> ExitCode {
 }
 
 async fn run() -> Result<(), String> {
+    dotenvy::dotenv().ok();
+
     let args = Args::parse(env::args().skip(1))?;
 
     if args.validate_only {

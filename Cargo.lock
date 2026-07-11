@@ -418,6 +418,7 @@ name = "hadith-assistant"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "dotenvy",
  "hex",
  "serde",
  "serde_json",
