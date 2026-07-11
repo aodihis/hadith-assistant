@@ -8,6 +8,8 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Postgres, Transaction};
 use thiserror::Error;
 
+use crate::transliteration::simple::transliterate;
+
 #[derive(Debug, Error)]
 pub enum ImportError {
     #[error("failed to read import file `{path}`: {source}")]
@@ -153,6 +155,7 @@ async fn insert_record(
             arabic_urn,
             arabic_bab_name,
             arabic_text,
+            arabic_transliteration,
             arabic_grade,
             english_urn,
             english_bab_name,
@@ -161,7 +164,7 @@ async fn insert_record(
             last_updated,
             xrefs
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
         "#,
     )
     .bind(collection_id)
@@ -173,12 +176,8 @@ async fn insert_record(
     .bind(record.our_hadith_number)
     .bind(record.arabic_urn)
     .bind(trim_optional(record.arabic_bab_name.as_deref()))
-    .bind(
-        record
-            .arabic_text
-            .as_deref()
-            .expect("validated Arabic text is present"),
-    )
+    .bind(validated_arabic_text(record))
+    .bind(arabic_transliteration(record))
     .bind(record.arabicgrade1.trim())
     .bind(record.english_urn)
     .bind(trim_optional(record.english_bab_name.as_deref()))
@@ -270,6 +269,17 @@ fn canonical_hadith_number(record: &RawHadithRecord) -> String {
     }
 }
 
+fn validated_arabic_text(record: &RawHadithRecord) -> &str {
+    record
+        .arabic_text
+        .as_deref()
+        .expect("validated Arabic text is present")
+}
+
+fn arabic_transliteration(record: &RawHadithRecord) -> String {
+    transliterate(validated_arabic_text(record))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -305,6 +315,13 @@ mod tests {
         };
 
         validate_dump(&dump).expect("source hadithNumber should be enough for canonical numbering");
+    }
+
+    #[test]
+    fn generates_transliteration_from_arabic_text_for_import() {
+        let record = record_with_numbers("1", 1, Some("إِنَّمَا"));
+
+        assert_eq!(arabic_transliteration(&record), "'innamaa");
     }
 
     fn record_with_numbers(

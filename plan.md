@@ -13,7 +13,7 @@ PostgreSQL
   hadiths              one row per Hadith JSON record
 
 External vector database
-  embeddings           vectors keyed back to PostgreSQL hadiths.id
+  embeddings           vectors keyed back to PostgreSQL hadiths.id or Hadith reference
 ```
 
 The vector database is an index, not the source of truth. The canonical Arabic
@@ -29,61 +29,126 @@ PostgreSQL.
 source. The app has importer code, but the corpus itself should stay local unless
 licensing and provenance are reviewed.
 
+## Status Legend
+
+- `Done`: implemented and checked into the backend.
+- `Partial`: boundary exists, but there is a known missing piece.
+- `Not started`: no implementation yet.
+
 ## Implementation Steps
 
-### 1. Create The PostgreSQL Schema
+### 1. Create The PostgreSQL Schema - Done
 
-- Create `collections`.
-- Create `hadiths`.
-- Keep Hadith fields close to the JSON source.
+Implemented in `migrations/0001_create_hadith_schema.sql`.
+
+- Created `collections`.
+- Created `hadiths`.
+- Kept Hadith fields close to the JSON source.
 - Put grades directly on `hadiths`.
-- Keep `arabic_transliteration` nullable for a later deterministic
-  transliteration pass.
+- Added nullable `arabic_transliteration`.
+- Added `UNIQUE (collection_id, book_number, hadith_number)` for reference
+  lookup and retrieval.
 
-### 2. Import Local `hadiths.json`
+Note: the migration file exists, but we have not yet run migrations against a
+real database in this workspace.
 
-- Parse and validate `data/imports/hadiths.json`.
-- Insert collection slugs into `collections`.
-- Insert one `hadiths` row per JSON record.
-- Preserve Arabic and English source text without changing it.
-- Keep external source data out of Git.
+### 2. Import Local `hadiths.json` - Partial
 
-### 3. Add Deterministic Arabic Transliteration
+Implemented:
 
-- Choose a simple deterministic transliteration rule set.
-- Generate transliteration from `hadiths.arabic_text`.
-- Store the result in `hadiths.arabic_transliteration`.
-- Do not overwrite `arabic_text`.
+- JSON parser and validator in `src/import/hadith_json.rs`.
+- Import CLI in `src/bin/import_hadiths.rs`.
+- Local import folder is ignored by Git.
+- Local JSON validation passed for 44,896 records.
+- Import docs exist in `docs/import-hadith-json.md`.
 
-### 4. Build The Axum Backend Foundation
+Still missing:
 
-- Add configuration parsing.
-- Add validated environment settings.
-- Add shared `AppState`.
-- Add PostgreSQL connection pool.
-- Add application error type and HTTP error mapping.
-- Add basic health route.
+- Run the import against a real PostgreSQL database after migrations are set up.
+- Add database-backed integration tests for import behavior.
 
-### 5. Add Repository And Service Layers
+### 3. Add Deterministic Arabic Transliteration - Partial
 
-- Keep SQL inside repository modules.
-- Keep HTTP handlers thin.
-- Add lookup and search methods for Hadith records.
+Implemented:
 
-### 6. Add Basic Search Before RAG
+- Added `simple-readable-v1` transliteration module.
+- Added tests for Arabic letters, diacritics, markup preservation, and non-Arabic text.
+- JSON import calls the transliteration library and stores
+  `hadiths.arabic_transliteration` during insert.
+- Added docs in `docs/transliteration.md`.
 
-- Support lookup by collection, book number, Hadith number, and grade.
-- Add text search where useful.
-- Return citation metadata with every result.
+Still missing:
 
-### 7. Add External Vector Search
+- Run the importer against a real PostgreSQL database and verify stored
+  transliteration values.
+- Review transliteration quality on real Hadith samples.
+- Decide whether the simple scheme is enough or if a scholarly scheme is needed later.
 
-- Chunk Hadith text for embedding outside the canonical schema.
-- Store embeddings in the selected external vector database.
-- Key vector records back to PostgreSQL `hadiths.id`.
-- Treat vector data as rebuildable.
+### 4. Build The Axum Backend Foundation - Done
 
-### 8. Add The Chat/RAG Endpoint
+Implemented:
+
+- Environment config in `src/config.rs`.
+- Shared `AppState` in `src/state.rs`.
+- PostgreSQL connection pool startup in `src/main.rs`.
+- Application error mapping in `src/error.rs`.
+- Health route at `GET /health`.
+- API docs in `docs/api.md`.
+
+Note: the server requires `DATABASE_URL`, and it has not been smoke-tested
+against a live database in this workspace.
+
+### 5. Add Repository And Service Layers - Done
+
+Implemented:
+
+- Collection repository/service.
+- Hadith repository/service.
+- Thin Axum route handlers.
+- Validation in services before repository calls.
+- Unit tests for validation and error behavior.
+
+Still missing:
+
+- Database-backed repository integration tests.
+
+### 6. Add Basic Search Before RAG - Partial
+
+Implemented:
+
+- Hadith list filters for collection, book number, Hadith number, and grade.
+- Hadith lookup by internal `id`.
+- Hadith lookup by reference:
+  `GET /hadiths/by-reference/{collection}/{book_number}/{hadith_number}`.
+
+Still missing:
+
+- Full text search over Arabic and English text.
+- Citation-specific response DTOs separate from full Hadith rows.
+- Integration tests against PostgreSQL.
+
+### 7. Add External Vector Search - Partial
+
+Implemented:
+
+- Retrieval API boundary at `POST /retrieval`.
+- Retrieval service exists.
+- Service validates request shape.
+- Service returns `501 Not Implemented`.
+- Missing retrieval behavior is marked with an explicit `TODO`.
+
+Still missing:
+
+- Choose the external vector database.
+- Define vector record metadata.
+- Generate chunks or embedding input outside the canonical schema.
+- Store embeddings externally.
+- Resolve vector matches back to Hadith records.
+- Add retrieval tests for scope filtering, no-result behavior, and citations.
+
+### 8. Add The Chat/RAG Endpoint - Not Started
+
+Planned:
 
 - Accept a user query.
 - Apply validation and collection/language filters.

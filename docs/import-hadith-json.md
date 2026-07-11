@@ -47,6 +47,9 @@ The `hadiths` table follows the JSON closely. Grades live on the Hadith row as
 `arabic_grade` and `english_grade`, matching the source fields `arabicgrade1`
 and `englishgrade1`.
 
+The importer also derives `arabic_transliteration` from `arabicText` by calling
+the local deterministic transliteration library.
+
 ## Required Fields
 
 The importer requires:
@@ -64,12 +67,11 @@ The importer requires:
 
 ## Transliteration
 
-The schema has a nullable `arabic_transliteration` column on `hadiths`.
+The importer fills `hadiths.arabic_transliteration` during import. It calls
+`simple-readable-v1`, which is a local deterministic function that accepts
+Arabic text and returns Latin transliteration.
 
-For now this is intentionally simple. When we add transliteration, the importer
-or a later maintenance command can fill that column from `arabic_text` using a
-fixed deterministic rule set. There is no separate transliteration scheme table
-or version field yet.
+The original Arabic source text remains authoritative and is never modified.
 
 ## Commands
 
