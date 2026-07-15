@@ -18,10 +18,56 @@ cp .env.example .env
 The server loads `.env` automatically at startup. Real `.env` files are ignored
 by Git.
 
+On startup, the server automatically applies pending SQL files from
+`migrations/` using SQLx. Migrations are embedded in the compiled binary, so
+the runtime container does not need the migration files mounted separately.
+If a migration fails, startup fails before the HTTP server begins accepting
+requests.
+
 Start the local PostgreSQL and Qdrant services:
 
 ```bash
 docker compose up -d postgres qdrant
+```
+
+The Rust API is excluded from Docker Compose by default. This keeps the normal
+development loop on the host:
+
+```bash
+make dev
+```
+
+`make dev` starts PostgreSQL and Qdrant in Docker, then runs the API on the host
+with `cargo watch`. Rust source and migration changes trigger an incremental
+rebuild and server restart. SQLx checks migrations during each startup but
+applies only pending versions.
+
+The equivalent commands without Make are:
+
+```bash
+docker compose up -d postgres qdrant
+cargo watch -x "run --bin hadith-assistant"
+```
+
+Other useful targets are `make run` for a single host run, `make infra-up`,
+`make infra-down`, and `make check`.
+
+To run the Rust API in Docker too, set the Compose profile in `.env`:
+
+```dotenv
+COMPOSE_PROFILES=app
+```
+
+Then start the complete stack:
+
+```bash
+docker compose up -d --build
+```
+
+You can also enable it for a single command without changing `.env`:
+
+```bash
+docker compose --profile app up -d --build
 ```
 
 PostgreSQL is exposed on `localhost:5433` to avoid colliding with a local

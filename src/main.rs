@@ -26,6 +26,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .connect(&config.database_url)
         .await?;
 
+    sqlx::migrate!().run(&pool).await?;
+    tracing::info!("database migrations completed");
+
     let app = routes::router(AppState::new(pool)).layer(TraceLayer::new_for_http());
     let listener = tokio::net::TcpListener::bind(config.server_addr).await?;
 
