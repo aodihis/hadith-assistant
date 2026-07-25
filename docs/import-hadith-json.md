@@ -1,6 +1,6 @@
 # Hadith JSON Import
 
-The backend imports Hadith source data from a local JSON file. Source data files
+The application imports Hadith source data from a local JSON file. Source data files
 belong in `data/imports/`, which is ignored by Git because the dataset comes
 from an external source.
 

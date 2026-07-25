@@ -1,8 +1,7 @@
+use hadith_assistant::app;
+use hadith_assistant::application::AppServices;
 use hadith_assistant::config::Config;
-use hadith_assistant::routes;
-use hadith_assistant::state::AppState;
 use sqlx::postgres::PgPoolOptions;
-use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -22,18 +21,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let pool = PgPoolOptions::new()
-        .max_connections(10)
+        .max_connections(config.database_max_connections)
         .connect(&config.database_url)
         .await?;
 
     sqlx::migrate!().run(&pool).await?;
     tracing::info!("database migrations completed");
 
-    let app = routes::router(AppState::new(pool)).layer(TraceLayer::new_for_http());
-    let listener = tokio::net::TcpListener::bind(config.server_addr).await?;
-
-    tracing::info!("listening on {}", config.server_addr);
-    axum::serve(listener, app).await?;
+    let router = app::router(AppServices::new(pool))?;
+    topcoat::start(router).await?;
 
     Ok(())
 }

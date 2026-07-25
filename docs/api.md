@@ -1,94 +1,51 @@
-# Backend API
+# Web and JSON API
 
-The backend starts an Axum HTTP server using:
+Topcoat serves the web interface and JSON API from the same Rust binary.
+`DATABASE_URL` is required; the rest of the configuration is documented in the
+root [README](../README.md).
 
-- `DATABASE_URL`, required
-- `SERVER_HOST`, optional, defaults to `127.0.0.1`
-- `SERVER_PORT`, optional, defaults to `3000`
-- `VECTOR_DB_PROVIDER`, optional, defaults to `qdrant`
-- `QDRANT_URL`, optional, defaults to `http://localhost:6333`
-- `QDRANT_COLLECTION`, optional, defaults to `hadith_vectors`
+Pending SQLx migrations run before the server begins accepting requests.
 
-Create a local `.env` from the checked-in example:
+## Local server
 
-```bash
-cp .env.example .env
-```
-
-The server loads `.env` automatically at startup. Real `.env` files are ignored
-by Git.
-
-On startup, the server automatically applies pending SQL files from
-`migrations/` using SQLx. Migrations are embedded in the compiled binary, so
-the runtime container does not need the migration files mounted separately.
-If a migration fails, startup fails before the HTTP server begins accepting
-requests.
-
-Start the local PostgreSQL and Qdrant services:
+Start dependencies and the Topcoat development server:
 
 ```bash
 docker compose up -d postgres qdrant
+topcoat dev
 ```
 
-The Rust API is excluded from Docker Compose by default. This keeps the normal
-development loop on the host:
+The application listens on <http://127.0.0.1:3000> by default. Set `HOST` and
+`PORT` to override the bind address.
 
-```bash
-make dev
+## Browser pages
+
+```http
+GET /
+GET /hadiths
 ```
 
-`make dev` starts PostgreSQL and Qdrant in Docker, then runs the API on the host
-with `cargo watch`. Rust source and migration changes trigger an incremental
-rebuild and server restart. SQLx checks migrations during each startup but
-applies only pending versions.
+`/hadiths` accepts the same filters as the JSON list endpoint and renders
+canonical records on the server.
 
-The equivalent commands without Make are:
+## Error envelope
 
-```bash
-docker compose up -d postgres qdrant
-cargo watch -x "run --bin hadith-assistant"
+Application errors use a stable JSON shape:
+
+```json
+{
+  "code": "validation_error",
+  "message": "validation failed: limit must be between 1 and 200"
+}
 ```
 
-Other useful targets are `make run` for a single host run, `make infra-up`,
-`make infra-down`, and `make check`.
-
-To run the Rust API in Docker too, set the Compose profile in `.env`:
-
-```dotenv
-COMPOSE_PROFILES=app
-```
-
-Then start the complete stack:
-
-```bash
-docker compose up -d --build
-```
-
-You can also enable it for a single command without changing `.env`:
-
-```bash
-docker compose --profile app up -d --build
-```
-
-PostgreSQL is exposed on `localhost:5433` to avoid colliding with a local
-PostgreSQL instance on the default `5432` port.
-
-Qdrant is available at `http://localhost:6333`, with the dashboard at
-`http://localhost:6333/dashboard`.
-
-Run:
-
-```bash
-cargo run
-```
+Database details and internal stack traces are never returned to clients.
 
 ## Health
 
 ```http
-GET /health
+GET /api/health
 ```
-
-Response:
 
 ```json
 {
@@ -99,40 +56,48 @@ Response:
 ## Collections
 
 ```http
-GET /collections
-GET /collections/{slug}
+GET /api/collections
+GET /api/collections/{slug}
 ```
 
 ## Hadiths
 
 ```http
-GET /hadiths
-GET /hadiths/{id}
-GET /hadiths/by-reference/{collection}/{book_number}/{hadith_number}
+GET /api/hadiths
+GET /api/hadiths/{id}
+GET /api/hadiths/by-reference/{collection}/{book_number}/{hadith_number}
 ```
 
 Supported list filters:
 
 ```http
-GET /hadiths?collection=bukhari&book_number=1&hadith_number=1&grade=Sahih&limit=50&offset=0
+GET /api/hadiths?collection=bukhari&book_number=1&hadith_number=1&grade=Sahih&limit=50&offset=0
 ```
+
+- The default `limit` is `50`.
+- The maximum `limit` is `200`.
+- `offset` must be zero or greater.
 
 Reference lookup:
 
 ```http
-GET /hadiths/by-reference/bukhari/1/1
+GET /api/hadiths/by-reference/bukhari/1/1
 ```
 
-Hadith data is imported through the CLI, so the HTTP API is read-only for
-canonical data.
+Reference lookup returns an array because some collections assign the same
+published Hadith number to multiple independently sourced records or variants.
+The combination of collection, book number, and Hadith number is searchable but
+is not a canonical record identifier. Use each result's `id`, `arabic_urn`, or
+`english_urn` for record-level traceability.
+
+Canonical data is imported through the CLI, so the HTTP API remains read-only.
 
 ## Retrieval
 
 ```http
-POST /retrieval
+POST /api/retrieval
+Content-Type: application/json
 ```
-
-Request body:
 
 ```json
 {
@@ -142,7 +107,7 @@ Request body:
 }
 ```
 
-Current behavior:
+Current response:
 
 ```json
 {
@@ -151,5 +116,19 @@ Current behavior:
 }
 ```
 
-The endpoint exists so clients can integrate against the API shape. The actual
-Qdrant retrieval pipeline is still marked with a TODO in the service layer.
+The route exists so the contract can evolve in the full-stack application. The
+Qdrant retrieval, scope filtering, canonical-record resolution, and citation
+assembly stages are still explicit TODOs in the application service.
+
+## Migration from the backend-only layout
+
+The full-stack migration moved the former endpoints under `/api`:
+
+| Previous | Current |
+| --- | --- |
+| `/health` | `/api/health` |
+| `/collections` | `/api/collections` |
+| `/hadiths` | `/api/hadiths` |
+| `/retrieval` | `/api/retrieval` |
+
+The `/hadiths` path is now the server-rendered browser page.

@@ -2,7 +2,7 @@ use sqlx::PgPool;
 
 use crate::domain::Collection;
 use crate::error::AppError;
-use crate::repositories::collections::CollectionRepository;
+use crate::infrastructure::persistence::collections::CollectionRepository;
 
 #[derive(Clone)]
 pub struct CollectionService {

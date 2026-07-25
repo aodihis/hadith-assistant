@@ -1,11 +1,12 @@
 .PHONY: dev run infra-up infra-down check
 
-# Start Dockerized dependencies, then run the Rust API on the host with reloads.
+# Start dependencies, then run Topcoat with asset rebuilds and browser reloads.
 dev: infra-up
-	cargo watch -x "run --bin hadith-assistant"
+	topcoat dev
 
-# Run the Rust API once on the host. Pending migrations run during startup.
+# Bundle browser assets, then run the application once on the host.
 run:
+	topcoat asset bundle --bin hadith-assistant
 	cargo run --bin hadith-assistant
 
 infra-up:

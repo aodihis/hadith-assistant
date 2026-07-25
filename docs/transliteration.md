@@ -1,6 +1,6 @@
 # Arabic Transliteration
 
-The backend includes a deterministic local transliterator named
+The application includes a deterministic local transliterator named
 `simple-readable-v1`.
 
 It does not call a third-party service. It maps Arabic characters to readable

@@ -1,17 +1,22 @@
+mod collections;
+mod hadiths;
+mod retrieval;
+
 use std::sync::Arc;
 
+pub use collections::CollectionService;
+pub use hadiths::HadithService;
+pub use retrieval::RetrievalService;
 use sqlx::PgPool;
 
-use crate::services::{CollectionService, HadithService, RetrievalService};
-
 #[derive(Clone)]
-pub struct AppState {
+pub struct AppServices {
     pub collections: Arc<CollectionService>,
     pub hadiths: Arc<HadithService>,
     pub retrieval: Arc<RetrievalService>,
 }
 
-impl AppState {
+impl AppServices {
     pub fn new(pool: PgPool) -> Self {
         Self {
             collections: Arc::new(CollectionService::new(pool.clone())),

@@ -68,17 +68,21 @@ impl HadithRepository {
         collection: &str,
         book_number: &str,
         hadith_number: &str,
-    ) -> Result<Hadith, AppError> {
-        let hadith = sqlx::query_as::<_, Hadith>(&format!(
-            "{HADITH_SELECT} WHERE c.slug = $1 AND h.book_number = $2 AND h.hadith_number = $3"
+    ) -> Result<Vec<Hadith>, AppError> {
+        let hadiths = sqlx::query_as::<_, Hadith>(&format!(
+            "{HADITH_SELECT} WHERE c.slug = $1 AND h.book_number = $2 AND h.hadith_number = $3 ORDER BY h.id"
         ))
         .bind(collection)
         .bind(book_number)
         .bind(hadith_number)
-        .fetch_one(&self.pool)
+        .fetch_all(&self.pool)
         .await?;
 
-        Ok(hadith)
+        if hadiths.is_empty() {
+            return Err(AppError::NotFound("Hadith reference not found".to_owned()));
+        }
+
+        Ok(hadiths)
     }
 }
 

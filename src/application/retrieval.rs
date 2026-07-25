@@ -17,7 +17,8 @@ impl RetrievalService {
 
         // TODO: Implement retrieval by calling the selected vector database,
         // applying collection filters, and resolving matches back to hadiths
-        // by the unique reference (collection_id, book_number, hadith_number).
+        // by its stable source URN or database ID. A published reference may
+        // resolve to multiple independently sourced variants.
         Err(AppError::NotImplemented(format!(
             "retrieval is not implemented yet for query `{}`",
             query.query

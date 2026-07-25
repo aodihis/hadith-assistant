@@ -4,17 +4,18 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: hadith-assistant-api
+    container_name: hadith-assistant
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/hadiths
-      SERVER_HOST: 0.0.0.0
-      SERVER_PORT: ${SERVER_PORT:-3000}
+      DATABASE_MAX_CONNECTIONS: ${DATABASE_MAX_CONNECTIONS:-10}
+      HOST: 0.0.0.0
+      PORT: ${PORT:-3000}
       VECTOR_DB_PROVIDER: ${VECTOR_DB_PROVIDER:-qdrant}
       QDRANT_URL: http://qdrant:6333
       QDRANT_COLLECTION: ${QDRANT_COLLECTION:-hadith_vectors}
       RUST_LOG: ${RUST_LOG:-info}
     ports:
-      - "${SERVER_PORT:-3000}:${SERVER_PORT:-3000}"
+      - "${PORT:-3000}:${PORT:-3000}"
     depends_on:
       postgres:
         condition: service_healthy

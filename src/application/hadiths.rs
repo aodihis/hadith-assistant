@@ -2,7 +2,7 @@ use sqlx::PgPool;
 
 use crate::domain::{Hadith, HadithSearch};
 use crate::error::AppError;
-use crate::repositories::hadiths::HadithRepository;
+use crate::infrastructure::persistence::hadiths::HadithRepository;
 
 const DEFAULT_LIMIT: i64 = 50;
 const MAX_LIMIT: i64 = 200;
@@ -33,7 +33,7 @@ impl HadithService {
         collection: &str,
         book_number: &str,
         hadith_number: &str,
-    ) -> Result<Hadith, AppError> {
+    ) -> Result<Vec<Hadith>, AppError> {
         let collection = required("collection", collection)?;
         let book_number = required("book_number", book_number)?;
         let hadith_number = required("hadith_number", hadith_number)?;

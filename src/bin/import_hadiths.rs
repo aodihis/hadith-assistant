@@ -1,7 +1,7 @@
 use std::env;
 use std::process::ExitCode;
 
-use hadith_assistant::import::hadith_json::{
+use hadith_assistant::ingestion::hadith_json::{
     ImportOptions, import_hadith_json, load_dump, validate_dump,
 };
 

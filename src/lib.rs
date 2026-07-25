@@ -1,9 +1,8 @@
+pub mod app;
+pub mod application;
 pub mod config;
 pub mod domain;
 pub mod error;
-pub mod import;
-pub mod repositories;
-pub mod routes;
-pub mod services;
-pub mod state;
+pub mod infrastructure;
+pub mod ingestion;
 pub mod transliteration;

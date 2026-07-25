@@ -1,7 +1,3 @@
-use axum::Json;
-use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
-use serde::Serialize;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -20,24 +16,8 @@ pub enum AppError {
     Internal(String),
 }
 
-#[derive(Debug, Serialize)]
-struct ErrorResponse {
-    code: &'static str,
-    message: String,
-}
-
 impl AppError {
-    fn status_code(&self) -> StatusCode {
-        match self {
-            Self::Validation(_) => StatusCode::BAD_REQUEST,
-            Self::NotFound(_) => StatusCode::NOT_FOUND,
-            Self::Conflict(_) => StatusCode::CONFLICT,
-            Self::NotImplemented(_) => StatusCode::NOT_IMPLEMENTED,
-            Self::Database(_) | Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
-
-    fn code(&self) -> &'static str {
+    pub fn code(&self) -> &'static str {
         match self {
             Self::Validation(_) => "validation_error",
             Self::NotFound(_) => "not_found",
@@ -48,23 +28,11 @@ impl AppError {
         }
     }
 
-    fn public_message(&self) -> String {
+    pub fn public_message(&self) -> String {
         match self {
             Self::Database(_) => "database error".to_owned(),
             _ => self.to_string(),
         }
-    }
-}
-
-impl IntoResponse for AppError {
-    fn into_response(self) -> Response {
-        let status = self.status_code();
-        let body = Json(ErrorResponse {
-            code: self.code(),
-            message: self.public_message(),
-        });
-
-        (status, body).into_response()
     }
 }
 
@@ -85,42 +53,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn maps_error_variants_to_expected_status_and_code() {
+    fn exposes_stable_codes_and_safe_messages() {
         let cases = [
             (
                 AppError::Validation("bad input".to_owned()),
-                StatusCode::BAD_REQUEST,
                 "validation_error",
                 "validation failed: bad input",
             ),
             (
                 AppError::NotFound("missing".to_owned()),
-                StatusCode::NOT_FOUND,
                 "not_found",
                 "not found: missing",
             ),
             (
                 AppError::Conflict("duplicate".to_owned()),
-                StatusCode::CONFLICT,
                 "conflict",
                 "conflict: duplicate",
             ),
             (
                 AppError::NotImplemented("later".to_owned()),
-                StatusCode::NOT_IMPLEMENTED,
                 "not_implemented",
                 "not implemented: later",
             ),
             (
                 AppError::Internal("oops".to_owned()),
-                StatusCode::INTERNAL_SERVER_ERROR,
                 "internal_error",
                 "internal error: oops",
             ),
         ];
 
-        for (error, status, code, message) in cases {
-            assert_eq!(error.status_code(), status);
+        for (error, code, message) in cases {
             assert_eq!(error.code(), code);
             assert_eq!(error.public_message(), message);
         }
@@ -130,7 +92,6 @@ mod tests {
     fn database_errors_use_safe_public_message() {
         let error = AppError::Database(sqlx::Error::RowNotFound);
 
-        assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(error.code(), "database_error");
         assert_eq!(error.public_message(), "database error");
     }
