@@ -63,6 +63,17 @@ impl HadithRepository {
         Ok(hadith)
     }
 
+    pub async fn find_by_ids(&self, ids: &[i64]) -> Result<Vec<Hadith>, AppError> {
+        let hadiths = sqlx::query_as::<_, Hadith>(&format!(
+            "{HADITH_SELECT} WHERE h.id = ANY($1) ORDER BY h.id"
+        ))
+        .bind(ids)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(hadiths)
+    }
+
     pub async fn find_by_reference(
         &self,
         collection: &str,

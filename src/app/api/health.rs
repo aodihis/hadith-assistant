@@ -1,5 +1,5 @@
 use serde::Serialize;
-use topcoat::{Result, router::{Json, route}};
+use topcoat::{Result, router::route, router::content::Json};
 
 #[derive(Serialize)]
 struct HealthResponse {

@@ -28,7 +28,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     sqlx::migrate!().run(&pool).await?;
     tracing::info!("database migrations completed");
 
-    let router = app::router(AppServices::new(pool))?;
+    let router = app::router(AppServices::new(
+        pool,
+        config.embedding.clone(),
+        config.vector.clone(),
+    ))?;
     topcoat::start(router).await?;
 
     Ok(())

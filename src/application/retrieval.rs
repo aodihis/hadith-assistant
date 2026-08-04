@@ -1,28 +1,76 @@
-use crate::domain::{RetrievalQuery, RetrievalResult};
+use std::sync::Arc;
+
+use crate::domain::{RetrievalQuery, RetrievalResult, RetrievedHadith};
 use crate::error::AppError;
+use crate::infrastructure::embedding::Embedder;
+use crate::infrastructure::persistence::hadiths::HadithRepository;
+use crate::infrastructure::vector::VectorStore;
 
 const DEFAULT_LIMIT: i64 = 10;
 const MAX_LIMIT: i64 = 20;
 
-#[derive(Clone, Default)]
-pub struct RetrievalService;
+#[derive(Clone)]
+pub struct RetrievalService {
+    embedder: Arc<dyn Embedder>,
+    vector_store: Arc<dyn VectorStore>,
+    hadiths: HadithRepository,
+}
 
 impl RetrievalService {
-    pub fn new() -> Self {
-        Self
+    pub fn new(
+        embedder: Arc<dyn Embedder>,
+        vector_store: Arc<dyn VectorStore>,
+        hadiths: HadithRepository,
+    ) -> Self {
+        Self {
+            embedder,
+            vector_store,
+            hadiths,
+        }
     }
 
     pub async fn retrieve(&self, query: RetrievalQuery) -> Result<RetrievalResult, AppError> {
         let query = validate_query(query)?;
 
-        // TODO: Implement retrieval by calling the selected vector database,
-        // applying collection filters, and resolving matches back to hadiths
-        // by its stable source URN or database ID. A published reference may
-        // resolve to multiple independently sourced variants.
-        Err(AppError::NotImplemented(format!(
-            "retrieval is not implemented yet for query `{}`",
-            query.query
-        )))
+        let mut vectors = self
+            .embedder
+            .embed_batch(std::slice::from_ref(&query.query))
+            .await?;
+        let vector = vectors.pop().ok_or_else(|| {
+            AppError::Internal("embedding provider returned no vector for the query".to_owned())
+        })?;
+
+        let matches = self
+            .vector_store
+            .search(vector, query.collection.as_deref(), query.limit)
+            .await?;
+
+        let mut results = Vec::with_capacity(matches.len());
+        for candidate in matches {
+            match self.hadiths.find_by_id(candidate.hadith_id).await {
+                Ok(hadith) => results.push(RetrievedHadith {
+                    hadith_id: hadith.id,
+                    collection: hadith.collection,
+                    book_number: hadith.book_number,
+                    hadith_number: hadith.hadith_number,
+                    arabic_text: hadith.arabic_text,
+                    english_text: hadith.english_text,
+                    score: Some(candidate.score as f64),
+                }),
+                Err(AppError::NotFound(_)) => {
+                    tracing::warn!(
+                        hadith_id = candidate.hadith_id,
+                        "retrieval candidate no longer resolves to a canonical record"
+                    );
+                }
+                Err(error) => return Err(error),
+            }
+        }
+
+        Ok(RetrievalResult {
+            query: query.query,
+            results,
+        })
     }
 }
 
@@ -56,26 +104,107 @@ fn validate_query(query: RetrievalQuery) -> Result<RetrievalQuery, AppError> {
 
 #[cfg(test)]
 mod tests {
+    use async_trait::async_trait;
+
     use super::*;
+    use crate::infrastructure::vector::{EmbeddingPoint, VectorMatch};
+
+    struct FakeEmbedder;
+
+    #[async_trait]
+    impl Embedder for FakeEmbedder {
+        async fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, AppError> {
+            Ok(texts.iter().map(|_| vec![0.1, 0.2, 0.3]).collect())
+        }
+    }
+
+    struct FakeVectorStore {
+        matches: Vec<VectorMatch>,
+    }
+
+    #[async_trait]
+    impl VectorStore for FakeVectorStore {
+        async fn ensure_collection(&self, _vector_size: u64) -> Result<(), AppError> {
+            Ok(())
+        }
+
+        async fn upsert(&self, _points: Vec<EmbeddingPoint>) -> Result<(), AppError> {
+            Ok(())
+        }
+
+        async fn search(
+            &self,
+            _vector: Vec<f32>,
+            _collection_filter: Option<&str>,
+            _limit: i64,
+        ) -> Result<Vec<VectorMatch>, AppError> {
+            Ok(self.matches.clone())
+        }
+    }
+
+    fn test_repository() -> HadithRepository {
+        use sqlx::postgres::PgPoolOptions;
+
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://postgres:postgres@localhost/hadiths")
+            .expect("test database URL should parse");
+
+        HadithRepository::new(pool)
+    }
 
     #[tokio::test]
-    async fn retrieve_returns_not_implemented_after_validation() {
-        let service = RetrievalService::new();
+    async fn retrieve_returns_validation_error_for_empty_query() {
+        let service = RetrievalService::new(
+            Arc::new(FakeEmbedder),
+            Arc::new(FakeVectorStore { matches: vec![] }),
+            test_repository(),
+        );
 
         let error = service
             .retrieve(RetrievalQuery {
-                query: " intentions ".to_owned(),
-                collection: Some(" bukhari ".to_owned()),
+                query: "   ".to_owned(),
+                collection: None,
                 limit: 0,
             })
             .await
-            .expect_err("retrieval should remain explicitly unimplemented");
+            .expect_err("empty query should be invalid");
 
         assert!(matches!(
             error,
-            AppError::NotImplemented(message)
-                if message == "retrieval is not implemented yet for query `intentions`"
+            AppError::Validation(message) if message == "query is required"
         ));
+    }
+
+    #[tokio::test]
+    async fn retrieve_surfaces_a_database_error_instead_of_fabricating_results() {
+        let service = RetrievalService::new(
+            Arc::new(FakeEmbedder),
+            Arc::new(FakeVectorStore {
+                matches: vec![VectorMatch {
+                    hadith_id: 999_999,
+                    score: 0.9,
+                }],
+            }),
+            test_repository(),
+        );
+
+        // No live database in this test; find_by_id against a lazy pool with no
+        // reachable server surfaces as AppError::Database, not AppError::NotFound,
+        // so this test only exercises the validation + embed + search wiring path
+        // without asserting on database connectivity. Full end-to-end resolution
+        // is exercised manually against `docker compose up -d postgres qdrant`.
+        let result = service
+            .retrieve(RetrievalQuery {
+                query: "intentions".to_owned(),
+                collection: None,
+                limit: 5,
+            })
+            .await;
+
+        assert!(
+            result.is_err(),
+            "unreachable database should surface as an error, not fabricated results"
+        );
     }
 
     #[test]

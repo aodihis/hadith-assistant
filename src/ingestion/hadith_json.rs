@@ -69,6 +69,7 @@ pub struct ImportOptions {
 pub struct ImportSummary {
     pub record_count: usize,
     pub source_checksum: String,
+    pub inserted_ids: Vec<i64>,
 }
 
 pub fn load_dump(path: impl AsRef<Path>) -> Result<(HadithJsonDump, String), ImportError> {
@@ -124,8 +125,9 @@ async fn import_dump(
 ) -> Result<ImportSummary, ImportError> {
     let mut tx = pool.begin().await?;
 
+    let mut inserted_ids = Vec::with_capacity(dump.hadith_table.len());
     for record in &dump.hadith_table {
-        insert_record(&mut tx, record).await?;
+        inserted_ids.push(insert_record(&mut tx, record).await?);
     }
 
     tx.commit().await?;
@@ -133,16 +135,17 @@ async fn import_dump(
     Ok(ImportSummary {
         record_count: dump.hadith_table.len(),
         source_checksum: source_checksum.to_owned(),
+        inserted_ids,
     })
 }
 
 async fn insert_record(
     tx: &mut Transaction<'_, Postgres>,
     record: &RawHadithRecord,
-) -> Result<(), ImportError> {
+) -> Result<i64, ImportError> {
     let collection_id = upsert_collection(tx, record.collection.trim()).await?;
 
-    sqlx::query(
+    let id = sqlx::query_scalar::<_, i64>(
         r#"
         INSERT INTO hadiths (
             collection_id,
@@ -165,6 +168,7 @@ async fn insert_record(
             xrefs
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        RETURNING id
         "#,
     )
     .bind(collection_id)
@@ -185,10 +189,10 @@ async fn insert_record(
     .bind(record.englishgrade1.trim())
     .bind(trim_optional(record.last_updated.as_deref()))
     .bind(record.xrefs.trim())
-    .execute(&mut **tx)
+    .fetch_one(&mut **tx)
     .await?;
 
-    Ok(())
+    Ok(id)
 }
 
 async fn upsert_collection(

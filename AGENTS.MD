@@ -6,7 +6,7 @@ This repository is a full-stack Hadith research application built with Rust,
 Topcoat, PostgreSQL, and SQLx. It serves HTML and JSON from one application.
 Qdrant is planned as a retrieval index, never as the source of truth.
 
-Topcoat is early-stage software. The application currently targets `0.4.x`.
+Topcoat is early-stage software. The application currently targets `0.5.x`.
 Before changing framework APIs, consult the documentation for the exact locked
 version and expect module, macro, or asset behavior to change between releases.
 
@@ -164,3 +164,23 @@ verification was skipped.
 
 Keep changes simple and reversible. Do not revert unrelated user work in a dirty
 worktree.
+
+## Agent process
+
+- Never run `git commit` without an explicit, in-the-moment request from the
+  user — even when following a plan or skill whose steps say to commit after
+  each task. Implement the change, verify it, and leave it uncommitted for
+  the user to review, then wait to be asked.
+- Scale process to task size. Reserve heavy multi-agent workflows (a fresh
+  implementer subagent plus a separate reviewer subagent per task) for
+  large, complex, or judgment-heavy work. Small or fully-mechanical tasks
+  (dependency bumps, renames, single-file config additions) should be
+  implemented directly in the working session instead.
+- Do not create git worktrees for implementation work. Work directly in the
+  main checkout so changes are visible without switching folders.
+- If you find an issue in Topcoat or any other dependency (a bug, an
+  undocumented breaking change, missing functionality) do not silently
+  write a workaround. Stop and report it to the user first — what's
+  broken, what you found, and the options — before choosing a fix. The
+  right fix may belong upstream in the framework's own repository rather
+  than as a local patch, and that's the user's call to make.

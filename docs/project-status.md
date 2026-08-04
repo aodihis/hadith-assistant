@@ -2,7 +2,7 @@
 
 ## Architecture decision
 
-The application is a single Topcoat `0.4.x` Cargo package. Topcoat serves both
+The application is a single Topcoat `0.5.x` Cargo package. Topcoat serves both
 server-rendered pages and the JSON API. PostgreSQL is the source of truth for
 Hadith content; Qdrant is a replaceable retrieval index.
 
@@ -13,9 +13,10 @@ browser or API client
   -> SQLx repository
   -> PostgreSQL canonical record
 
-future retrieval request
+retrieval request
   -> retrieval policy and scope
-  -> Qdrant candidates
+  -> embed query (Embedder trait, OpenAI-compatible by default)
+  -> Qdrant candidates (VectorStore trait, Qdrant by default)
   -> PostgreSQL canonical resolution
   -> cited context
 ```
@@ -32,12 +33,14 @@ future retrieval request
 - Hadith filters and lookup by internal ID or published reference.
 - JSON import CLI with validation, one-transaction import, source checksum, and
   deterministic Arabic transliteration.
+- Qdrant retrieval: embed a query through a swappable `Embedder`, search a
+  swappable `VectorStore`, resolve every hit back to its canonical Hadith row.
+  Hadiths are embedded via `import_hadiths --embed`.
 - Docker Compose dependencies and a production image containing the binary and
   its Topcoat asset bundle.
 
 ## Deliberately incomplete
 
-- The Qdrant retrieval pipeline returns `501 Not Implemented`.
 - Full-text search over Arabic and English content is not implemented.
 - The chat/RAG answer endpoint is not implemented.
 - Database-backed integration tests are not yet available.
@@ -45,12 +48,24 @@ future retrieval request
 
 ## Next milestones
 
-1. Define versioned retrieval chunks and Qdrant payload metadata.
-2. Add an embedding ingestion workflow tied to canonical Hadith IDs.
-3. Implement scoped candidate retrieval and canonical-record resolution.
-4. Return citations and trace information from retrieval.
-5. Add database integration fixtures for repositories and ingestion.
-6. Add a chat use case only after citation-preserving retrieval is tested.
+1. Add database-backed integration fixtures for repositories, ingestion, and
+   retrieval, replacing the fake-double unit tests where a real database and
+   Qdrant instance can assert on end-to-end behavior.
+2. Full-text search over Arabic and English content, likely PostgreSQL-native
+   (`tsvector`), as a complement to vector retrieval rather than a
+   replacement.
+3. Commentary/explanation corpus: a future corpus of Hadith commentary (sharh)
+   books, embedded and retrievable the same way as Hadith text, to provide
+   explanatory context alongside or instead of raw citations. Reusable
+   through the existing `Embedder`/`VectorStore` traits, since collection
+   name and source text are already parameters rather than hardcoded
+   assumptions — implementation will decide between a second Qdrant
+   collection and a payload `kind` discriminator when that work starts.
+4. LLM-agnostic chat/RAG endpoint, built only after retrieval is proven in
+   production use, per the sequencing already established in `AGENTS.md`.
+   Should follow the same base-URL/API-key/model-configurable pattern as
+   `Embedder` so DeepSeek, OpenRouter, or other OpenAI-compatible chat
+   backends can be swapped without rewriting the use case.
 
 Topcoat is expected to change rapidly. Framework upgrades should remain isolated
 to the `app` layer, startup wiring, and asset build process whenever possible.

@@ -7,7 +7,7 @@ and serves the JSON API from one binary. PostgreSQL remains the source of truth,
 while Qdrant is reserved for a future citation-preserving retrieval index.
 
 Topcoat is intentionally early and experimental. This project currently targets
-Topcoat `0.4.x` and commits `Cargo.lock` so framework changes are adopted
+Topcoat `0.5.x` and commits `Cargo.lock` so framework changes are adopted
 deliberately.
 
 ## What is implemented
@@ -16,8 +16,9 @@ deliberately.
 - Read-only JSON endpoints for collections and canonical Hadith records.
 - PostgreSQL migrations applied automatically at startup.
 - Auditable JSON importer with deterministic Arabic transliteration.
-- A typed retrieval boundary that returns `501 Not Implemented` until the
-  Qdrant pipeline is built.
+- Qdrant-backed retrieval: embed a query through a swappable `Embedder`,
+  search a swappable `VectorStore`, resolve every hit back to its canonical
+  Hadith row.
 - Docker Compose services for PostgreSQL, Qdrant, and the complete application.
 
 ## Project structure
@@ -55,12 +56,12 @@ Requirements:
 
 - A current stable Rust toolchain
 - Docker with Docker Compose
-- Topcoat CLI `0.4.x`
+- Topcoat CLI `0.5.x`
 
 Install the CLI and create local configuration:
 
 ```bash
-cargo install topcoat-cli --version 0.4.0 --locked
+cargo install topcoat-cli --version 0.5.0 --locked
 cp .env.example .env
 ```
 
@@ -97,6 +98,9 @@ Configuration is loaded from `.env`:
 | `VECTOR_DB_PROVIDER` | no | `qdrant` | Selected vector backend |
 | `QDRANT_URL` | no | `http://localhost:6333` | Qdrant HTTP endpoint |
 | `QDRANT_COLLECTION` | no | `hadith_vectors` | Qdrant collection name |
+| `EMBEDDING_BASE_URL` | no | `https://api.openai.com/v1` | Embeddings API base URL |
+| `EMBEDDING_API_KEY` | no | — | Bearer token for the embeddings API; required to actually call retrieval or `import_hadiths --embed` |
+| `EMBEDDING_MODEL` | no | `text-embedding-3-small` | Embedding model name |
 | `RUST_LOG` | no | framework default | Tracing filter |
 
 ## Routes
@@ -130,7 +134,8 @@ cargo run --bin import_hadiths -- data/imports/hadiths.json
 ```
 
 The import runs in one database transaction and preserves canonical source
-references. See [docs/import-hadith-json.md](docs/import-hadith-json.md).
+references. Add `--embed` to also embed the newly imported records into
+Qdrant. See [docs/import-hadith-json.md](docs/import-hadith-json.md).
 
 ## Verification
 

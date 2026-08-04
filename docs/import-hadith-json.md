@@ -97,3 +97,23 @@ You can also pass the database URL as an argument:
 cargo run --bin import_hadiths -- data/imports/hadiths.json \
   --database-url postgres://user:password@localhost:5432/hadiths
 ```
+
+## Embedding for retrieval
+
+Add `--embed` to also index the newly imported records into Qdrant for
+`POST /api/retrieval`:
+
+```bash
+docker compose up -d postgres qdrant
+cargo run --bin import_hadiths -- data/imports/hadiths.json --embed
+```
+
+`--embed` only embeds the records inserted by that import run, not the whole
+table — it re-fetches them by the IDs the import just created, embeds their
+combined Arabic and English text through the configured embedding provider
+(`EMBEDDING_BASE_URL`, `EMBEDDING_API_KEY`, `EMBEDDING_MODEL` in the root
+[README](../README.md)), and upserts the resulting vectors into Qdrant
+(`QDRANT_URL`, `QDRANT_COLLECTION`), creating the collection on first use if
+it does not already exist. `EMBEDDING_API_KEY` and a reachable Qdrant
+instance are required when `--embed` is passed; plain `import_hadiths`
+without the flag needs neither.

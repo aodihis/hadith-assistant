@@ -1,7 +1,8 @@
 use topcoat::{
     Error, Result,
     context::{Cx, app_context},
-    router::{bad_request, internal_server_error, not_found, page, query_params},
+    router::{page, query_params},
+    router::error::{bad_request, internal_server_error, not_found},
     view::view,
 };
 

@@ -4,14 +4,20 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+async-trait = "0.1.91"
 dotenvy = "0.15.7"
 hex = "0.4.3"
+qdrant-client = "1.18.0"
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
 serde = { version = "1.0.204", features = ["derive"] }
 serde_json = "1.0.120"
 sha2 = "0.10.8"
 sqlx = { version = "0.8.0", features = ["migrate", "postgres", "runtime-tokio-rustls"] }
 thiserror = "2.0.0"
 tokio = { version = "1.38.0", features = ["macros", "rt-multi-thread"] }
-topcoat = "0.4.0"
+topcoat = "0.5.0"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+
+[dev-dependencies]
+wiremock = "0.6.5"

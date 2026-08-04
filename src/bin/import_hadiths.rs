@@ -1,9 +1,15 @@
 use std::env;
 use std::process::ExitCode;
 
+use hadith_assistant::config::{EmbeddingConfig, VectorConfig};
+use hadith_assistant::infrastructure::embedding::OpenAiEmbedder;
+use hadith_assistant::infrastructure::persistence::hadiths::HadithRepository;
+use hadith_assistant::infrastructure::vector::QdrantVectorStore;
+use hadith_assistant::ingestion::embedding::embed_hadiths;
 use hadith_assistant::ingestion::hadith_json::{
     ImportOptions, import_hadith_json, load_dump, validate_dump,
 };
+use sqlx::postgres::PgPoolOptions;
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -38,7 +44,7 @@ async fn run() -> Result<(), String> {
         .ok_or("DATABASE_URL or --database-url is required unless --validate-only is used")?;
 
     let summary = import_hadith_json(ImportOptions {
-        database_url,
+        database_url: database_url.clone(),
         json_path: args.json_path,
     })
     .await
@@ -49,7 +55,38 @@ async fn run() -> Result<(), String> {
         summary.record_count, summary.source_checksum
     );
 
+    if args.embed {
+        let embedded = run_embedding(&database_url, &summary.inserted_ids)
+            .await
+            .map_err(|error| error.to_string())?;
+        println!("embedded {embedded} records");
+    }
+
     Ok(())
+}
+
+async fn run_embedding(database_url: &str, hadith_ids: &[i64]) -> Result<usize, String> {
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(database_url)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let repository = HadithRepository::new(pool);
+    let hadiths = repository
+        .find_by_ids(hadith_ids)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let embedder = OpenAiEmbedder::new(EmbeddingConfig::from_env());
+    let vector_config = VectorConfig::from_env();
+    let vector_store =
+        QdrantVectorStore::new(&vector_config.qdrant_url, vector_config.qdrant_collection)
+            .map_err(|error| error.to_string())?;
+
+    embed_hadiths(&embedder, &vector_store, &hadiths)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[derive(Debug)]
@@ -57,6 +94,7 @@ struct Args {
     json_path: String,
     database_url: Option<String>,
     validate_only: bool,
+    embed: bool,
 }
 
 impl Args {
@@ -64,6 +102,7 @@ impl Args {
         let mut json_path = None;
         let mut database_url = None;
         let mut validate_only = false;
+        let mut embed = false;
 
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
@@ -73,6 +112,9 @@ impl Args {
                 }
                 "--validate-only" => {
                     validate_only = true;
+                }
+                "--embed" => {
+                    embed = true;
                 }
                 "-h" | "--help" => {
                     return Err(usage());
@@ -92,6 +134,7 @@ impl Args {
             json_path: json_path.ok_or_else(usage)?,
             database_url,
             validate_only,
+            embed,
         })
     }
 }
@@ -103,5 +146,28 @@ fn require_value(args: &mut impl Iterator<Item = String>, name: &str) -> Result<
 }
 
 fn usage() -> String {
-    "usage: import_hadiths <json-path> [--database-url <url>] [--validate-only]".to_owned()
+    "usage: import_hadiths <json-path> [--database-url <url>] [--validate-only] [--embed]"
+        .to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_recognizes_the_embed_flag() {
+        let args = Args::parse(["data/imports/hadiths.json".to_owned(), "--embed".to_owned()])
+            .expect("valid arguments should parse");
+
+        assert!(args.embed);
+        assert_eq!(args.json_path, "data/imports/hadiths.json");
+    }
+
+    #[test]
+    fn parse_defaults_embed_to_false() {
+        let args = Args::parse(["data/imports/hadiths.json".to_owned()])
+            .expect("valid arguments should parse");
+
+        assert!(!args.embed);
+    }
 }

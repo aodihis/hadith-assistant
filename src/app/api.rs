@@ -2,9 +2,8 @@ use serde::Serialize;
 use topcoat::{
     Result,
     context::{Cx, CxBuilder},
-    router::{
-        Body, IntoResponse, Json, Next, Response, StatusCode, layer,
-    },
+    router::{Body, IntoResponse, Next, Response, StatusCode, layer},
+    router::content::Json,
 };
 
 use crate::error::AppError;

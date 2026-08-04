@@ -107,18 +107,37 @@ Content-Type: application/json
 }
 ```
 
-Current response:
+`collection` and `limit` are optional. `limit` defaults to `10` and is capped
+at `20`.
+
+Response:
 
 ```json
 {
-  "code": "not_implemented",
-  "message": "not implemented: retrieval is not implemented yet for query `intentions`"
+  "query": "intentions",
+  "results": [
+    {
+      "hadith_id": 1,
+      "collection": "bukhari",
+      "book_number": "1",
+      "hadith_number": "1",
+      "arabic_text": "...",
+      "english_text": "...",
+      "score": 0.83
+    }
+  ]
 }
 ```
 
-The route exists so the contract can evolve in the full-stack application. The
-Qdrant retrieval, scope filtering, canonical-record resolution, and citation
-assembly stages are still explicit TODOs in the application service.
+Retrieval embeds the query text through the configured embedding provider,
+searches Qdrant for the nearest indexed Hadith vectors (optionally scoped to
+one collection), and resolves every match back to its canonical PostgreSQL
+record before returning it. A vector match that no longer resolves to a
+canonical record (e.g. a stale point after a Hadith was removed) is dropped
+from the response rather than fabricated; it is logged as a warning.
+
+Hadiths are indexed into Qdrant via `import_hadiths --embed`, documented in
+[docs/import-hadith-json.md](import-hadith-json.md).
 
 ## Migration from the backend-only layout
 
