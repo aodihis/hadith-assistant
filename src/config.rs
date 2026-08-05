@@ -62,7 +62,7 @@ impl VectorConfig {
         Self {
             provider: env::var("VECTOR_DB_PROVIDER").unwrap_or_else(|_| "qdrant".to_owned()),
             qdrant_url: env::var("QDRANT_URL")
-                .unwrap_or_else(|_| "http://localhost:6333".to_owned()),
+                .unwrap_or_else(|_| "http://localhost:6334".to_owned()),
             qdrant_collection: env::var("QDRANT_COLLECTION")
                 .unwrap_or_else(|_| "hadith_vectors".to_owned()),
         }
@@ -85,7 +85,7 @@ impl Default for VectorConfig {
     fn default() -> Self {
         Self {
             provider: "qdrant".to_owned(),
-            qdrant_url: "http://localhost:6333".to_owned(),
+            qdrant_url: "http://localhost:6334".to_owned(),
             qdrant_collection: "hadith_vectors".to_owned(),
         }
     }
@@ -130,7 +130,7 @@ mod tests {
         let config = VectorConfig::default();
 
         assert_eq!(config.provider, "qdrant");
-        assert_eq!(config.qdrant_url, "http://localhost:6333");
+        assert_eq!(config.qdrant_url, "http://localhost:6334");
         assert_eq!(config.qdrant_collection, "hadith_vectors");
     }
 }

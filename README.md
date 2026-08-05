@@ -96,7 +96,7 @@ Configuration is loaded from `.env`:
 | `HOST` | no | `127.0.0.1` | Topcoat bind host |
 | `PORT` | no | `3000` | Topcoat bind port |
 | `VECTOR_DB_PROVIDER` | no | `qdrant` | Selected vector backend |
-| `QDRANT_URL` | no | `http://localhost:6333` | Qdrant HTTP endpoint |
+| `QDRANT_URL` | no | `http://localhost:6334` | Qdrant gRPC endpoint (`qdrant-client` speaks gRPC, not REST — port 6333 is REST-only and will not work here) |
 | `QDRANT_COLLECTION` | no | `hadith_vectors` | Qdrant collection name |
 | `EMBEDDING_BASE_URL` | no | `https://api.openai.com/v1` | Embeddings API base URL |
 | `EMBEDDING_API_KEY` | no | — | Bearer token for the embeddings API; required to actually call retrieval or `import_hadiths --embed` |

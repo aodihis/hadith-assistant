@@ -11,7 +11,7 @@ services:
       HOST: 0.0.0.0
       PORT: ${PORT:-3000}
       VECTOR_DB_PROVIDER: ${VECTOR_DB_PROVIDER:-qdrant}
-      QDRANT_URL: http://qdrant:6333
+      QDRANT_URL: http://qdrant:6334
       QDRANT_COLLECTION: ${QDRANT_COLLECTION:-hadith_vectors}
       RUST_LOG: ${RUST_LOG:-info}
     ports:
