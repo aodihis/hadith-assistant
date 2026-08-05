@@ -2,8 +2,8 @@ use serde::Deserialize;
 use topcoat::{
     Result,
     context::{Cx, app_context},
-    router::route,
     router::content::Json,
+    router::route,
 };
 
 use crate::application::AppServices;

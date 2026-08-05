@@ -1,9 +1,14 @@
+mod collections;
+mod hadiths;
+mod health;
+mod retrieval;
+
 use serde::Serialize;
 use topcoat::{
     Result,
     context::{Cx, CxBuilder},
-    router::{Body, IntoResponse, Next, Response, StatusCode, layer},
     router::content::Json,
+    router::{Body, IntoResponse, Next, Response, StatusCode, layer},
 };
 
 use crate::error::AppError;
