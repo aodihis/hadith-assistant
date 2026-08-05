@@ -8,6 +8,7 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Postgres, Transaction};
 use thiserror::Error;
 
+use crate::ingestion::narrator::{insert_narrators, parse_isnad};
 use crate::transliteration::simple::transliterate;
 
 #[derive(Debug, Error)]
@@ -144,6 +145,10 @@ async fn insert_record(
     record: &RawHadithRecord,
 ) -> Result<i64, ImportError> {
     let collection_id = upsert_collection(tx, record.collection.trim()).await?;
+    let parsed = parse_isnad(
+        validated_arabic_text(record),
+        record.english_text.as_deref(),
+    );
 
     let id = sqlx::query_scalar::<_, i64>(
         r#"
@@ -180,8 +185,8 @@ async fn insert_record(
     .bind(record.our_hadith_number)
     .bind(record.arabic_urn)
     .bind(trim_optional(record.arabic_bab_name.as_deref()))
-    .bind(validated_arabic_text(record))
-    .bind(arabic_transliteration(record))
+    .bind(&parsed.clean_arabic_text)
+    .bind(arabic_transliteration(&parsed.clean_arabic_text))
     .bind(record.arabicgrade1.trim())
     .bind(record.english_urn)
     .bind(trim_optional(record.english_bab_name.as_deref()))
@@ -191,6 +196,8 @@ async fn insert_record(
     .bind(record.xrefs.trim())
     .fetch_one(&mut **tx)
     .await?;
+
+    insert_narrators(tx, id, &parsed.narrators).await?;
 
     Ok(id)
 }
@@ -280,8 +287,8 @@ fn validated_arabic_text(record: &RawHadithRecord) -> &str {
         .expect("validated Arabic text is present")
 }
 
-fn arabic_transliteration(record: &RawHadithRecord) -> String {
-    transliterate(validated_arabic_text(record))
+fn arabic_transliteration(clean_arabic_text: &str) -> String {
+    transliterate(clean_arabic_text)
 }
 
 #[cfg(test)]
@@ -325,7 +332,15 @@ mod tests {
     fn generates_transliteration_from_arabic_text_for_import() {
         let record = record_with_numbers("1", 1, Some("إِنَّمَا"));
 
-        assert_eq!(arabic_transliteration(&record), "'innamaa");
+        assert_eq!(
+            arabic_transliteration(validated_arabic_text(&record)),
+            "'innamaa"
+        );
+    }
+
+    #[test]
+    fn arabic_transliteration_now_takes_clean_text_directly() {
+        assert_eq!(arabic_transliteration("إِنَّمَا"), "'innamaa");
     }
 
     fn record_with_numbers(

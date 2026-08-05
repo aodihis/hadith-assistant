@@ -2,12 +2,14 @@
 name = "hadith-assistant"
 version = "0.1.0"
 edition = "2024"
+default-run = "hadith-assistant"
 
 [dependencies]
 async-trait = "0.1.91"
 dotenvy = "0.15.7"
 hex = "0.4.3"
 qdrant-client = "1.18.0"
+regex = "1.10"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
 serde = { version = "1.0.204", features = ["derive"] }
 serde_json = "1.0.120"

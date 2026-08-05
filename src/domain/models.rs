@@ -65,3 +65,13 @@ pub struct RetrievalResult {
     pub query: String,
     pub results: Vec<RetrievedHadith>,
 }
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+pub struct Narrator {
+    pub id: i64,
+    pub hadith_id: i64,
+    pub external_id: Option<i64>,
+    pub role: String,
+    pub name: String,
+    pub position: i32,
+}

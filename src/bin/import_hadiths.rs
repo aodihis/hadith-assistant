@@ -9,6 +9,7 @@ use hadith_assistant::ingestion::embedding::embed_hadiths;
 use hadith_assistant::ingestion::hadith_json::{
     ImportOptions, import_hadith_json, load_dump, validate_dump,
 };
+use hadith_assistant::ingestion::narrator_backfill::backfill_narrators;
 use sqlx::postgres::PgPoolOptions;
 
 #[tokio::main]
@@ -27,25 +28,37 @@ async fn run() -> Result<(), String> {
 
     let args = Args::parse(env::args().skip(1))?;
 
+    let database_url = args
+        .database_url
+        .clone()
+        .or_else(|| env::var("DATABASE_URL").ok())
+        .ok_or("DATABASE_URL or --database-url is required unless --validate-only is used")?;
+
+    if args.backfill_narrators {
+        return run_backfill_narrators(&database_url)
+            .await
+            .map_err(|error| error.to_string());
+    }
+
+    let json_path = args
+        .json_path
+        .clone()
+        .expect("json_path required when not backfilling, enforced by Args::parse");
+
     if args.validate_only {
-        let (dump, checksum) = load_dump(&args.json_path).map_err(|error| error.to_string())?;
+        let (dump, checksum) = load_dump(&json_path).map_err(|error| error.to_string())?;
         validate_dump(&dump).map_err(|error| error.to_string())?;
         println!(
             "validated {} records from {} ({checksum})",
             dump.hadith_table.len(),
-            args.json_path
+            json_path
         );
         return Ok(());
     }
 
-    let database_url = args
-        .database_url
-        .or_else(|| env::var("DATABASE_URL").ok())
-        .ok_or("DATABASE_URL or --database-url is required unless --validate-only is used")?;
-
     let summary = import_hadith_json(ImportOptions {
         database_url: database_url.clone(),
-        json_path: args.json_path,
+        json_path,
     })
     .await
     .map_err(|error| error.to_string())?;
@@ -61,6 +74,28 @@ async fn run() -> Result<(), String> {
             .map_err(|error| error.to_string())?;
         println!("embedded {embedded} records");
     }
+
+    Ok(())
+}
+
+async fn run_backfill_narrators(database_url: &str) -> Result<(), String> {
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(database_url)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let summary = backfill_narrators(&pool)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    println!(
+        "narrator backfill: scanned {}, updated {}, already processed {}, failed {}",
+        summary.rows_scanned,
+        summary.rows_updated,
+        summary.rows_skipped_already_processed,
+        summary.rows_failed
+    );
 
     Ok(())
 }
@@ -91,10 +126,11 @@ async fn run_embedding(database_url: &str, hadith_ids: &[i64]) -> Result<usize, 
 
 #[derive(Debug)]
 struct Args {
-    json_path: String,
+    json_path: Option<String>,
     database_url: Option<String>,
     validate_only: bool,
     embed: bool,
+    backfill_narrators: bool,
 }
 
 impl Args {
@@ -103,6 +139,7 @@ impl Args {
         let mut database_url = None;
         let mut validate_only = false;
         let mut embed = false;
+        let mut backfill_narrators = false;
 
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
@@ -115,6 +152,9 @@ impl Args {
                 }
                 "--embed" => {
                     embed = true;
+                }
+                "--backfill-narrators" => {
+                    backfill_narrators = true;
                 }
                 "-h" | "--help" => {
                     return Err(usage());
@@ -130,11 +170,23 @@ impl Args {
             }
         }
 
+        if backfill_narrators {
+            if json_path.is_some() {
+                return Err(format!(
+                    "--backfill-narrators takes no <json-path>\n\n{}",
+                    usage()
+                ));
+            }
+        } else if json_path.is_none() {
+            return Err(usage());
+        }
+
         Ok(Self {
-            json_path: json_path.ok_or_else(usage)?,
+            json_path,
             database_url,
             validate_only,
             embed,
+            backfill_narrators,
         })
     }
 }
@@ -146,7 +198,7 @@ fn require_value(args: &mut impl Iterator<Item = String>, name: &str) -> Result<
 }
 
 fn usage() -> String {
-    "usage: import_hadiths <json-path> [--database-url <url>] [--validate-only] [--embed]"
+    "usage: import_hadiths <json-path> [--database-url <url>] [--validate-only] [--embed]\n       import_hadiths --backfill-narrators [--database-url <url>]"
         .to_owned()
 }
 
@@ -160,7 +212,7 @@ mod tests {
             .expect("valid arguments should parse");
 
         assert!(args.embed);
-        assert_eq!(args.json_path, "data/imports/hadiths.json");
+        assert_eq!(args.json_path.as_deref(), Some("data/imports/hadiths.json"));
     }
 
     #[test]
@@ -169,5 +221,32 @@ mod tests {
             .expect("valid arguments should parse");
 
         assert!(!args.embed);
+    }
+
+    #[test]
+    fn parse_accepts_backfill_narrators_without_a_json_path() {
+        let args = Args::parse(["--backfill-narrators".to_owned()])
+            .expect("backfill mode should not require a json path");
+
+        assert!(args.backfill_narrators);
+        assert!(args.json_path.is_none());
+    }
+
+    #[test]
+    fn parse_rejects_backfill_narrators_combined_with_a_json_path() {
+        let error = Args::parse([
+            "data/imports/hadiths.json".to_owned(),
+            "--backfill-narrators".to_owned(),
+        ])
+        .expect_err("backfill mode should reject a json path argument");
+
+        assert!(error.contains("--backfill-narrators takes no <json-path>"));
+    }
+
+    #[test]
+    fn parse_rejects_missing_json_path_when_not_backfilling() {
+        let error = Args::parse([]).expect_err("json path is required outside backfill mode");
+
+        assert!(error.contains("usage:"));
     }
 }
