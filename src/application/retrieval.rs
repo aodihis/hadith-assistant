@@ -4,10 +4,11 @@ use crate::domain::{RetrievalQuery, RetrievalResult, RetrievedHadith};
 use crate::error::AppError;
 use crate::infrastructure::embedding::Embedder;
 use crate::infrastructure::persistence::hadiths::HadithRepository;
-use crate::infrastructure::vector::VectorStore;
+use crate::infrastructure::vector::{VectorMatch, VectorStore};
 
 const DEFAULT_LIMIT: i64 = 10;
 const MAX_LIMIT: i64 = 20;
+const DEFAULT_RELATED_LIMIT: i64 = 3;
 
 #[derive(Clone)]
 pub struct RetrievalService {
@@ -72,6 +73,52 @@ impl RetrievalService {
             results,
         })
     }
+
+    pub async fn find_related(
+        &self,
+        hadith_id: i64,
+        limit: i64,
+    ) -> Result<Vec<RetrievedHadith>, AppError> {
+        let source = self.hadiths.find_by_id(hadith_id).await?;
+        let limit = normalize_related_limit(limit);
+
+        let mut vectors = self
+            .embedder
+            .embed_batch(std::slice::from_ref(&source.arabic_text))
+            .await?;
+        let vector = vectors.pop().ok_or_else(|| {
+            AppError::Internal(
+                "embedding provider returned no vector for the source hadith".to_owned(),
+            )
+        })?;
+
+        let matches = self.vector_store.search(vector, None, limit + 1).await?;
+        let candidates = select_related_candidates(matches, hadith_id, limit);
+
+        let mut results = Vec::with_capacity(candidates.len());
+        for candidate in candidates {
+            match self.hadiths.find_by_id(candidate.hadith_id).await {
+                Ok(hadith) => results.push(RetrievedHadith {
+                    hadith_id: hadith.id,
+                    collection: hadith.collection,
+                    book_number: hadith.book_number,
+                    hadith_number: hadith.hadith_number,
+                    arabic_text: hadith.arabic_text,
+                    english_text: hadith.english_text,
+                    score: Some(candidate.score as f64),
+                }),
+                Err(AppError::NotFound(_)) => {
+                    tracing::warn!(
+                        hadith_id = candidate.hadith_id,
+                        "related candidate no longer resolves to a canonical record"
+                    );
+                }
+                Err(error) => return Err(error),
+            }
+        }
+
+        Ok(results)
+    }
 }
 
 fn validate_query(query: RetrievalQuery) -> Result<RetrievalQuery, AppError> {
@@ -100,6 +147,26 @@ fn validate_query(query: RetrievalQuery) -> Result<RetrievalQuery, AppError> {
             .filter(|collection| !collection.is_empty()),
         limit,
     })
+}
+
+fn normalize_related_limit(limit: i64) -> i64 {
+    if limit <= 0 {
+        DEFAULT_RELATED_LIMIT
+    } else {
+        limit
+    }
+}
+
+fn select_related_candidates(
+    matches: Vec<VectorMatch>,
+    exclude_hadith_id: i64,
+    limit: i64,
+) -> Vec<VectorMatch> {
+    matches
+        .into_iter()
+        .filter(|candidate| candidate.hadith_id != exclude_hadith_id)
+        .take(limit as usize)
+        .collect()
 }
 
 #[cfg(test)]
@@ -139,6 +206,15 @@ mod tests {
             _limit: i64,
         ) -> Result<Vec<VectorMatch>, AppError> {
             Ok(self.matches.clone())
+        }
+    }
+
+    struct PanicsIfCalledEmbedder;
+
+    #[async_trait]
+    impl Embedder for PanicsIfCalledEmbedder {
+        async fn embed_batch(&self, _texts: &[String]) -> Result<Vec<Vec<f32>>, AppError> {
+            panic!("embedder should not be called");
         }
     }
 
@@ -263,5 +339,121 @@ mod tests {
             AppError::Validation(message)
                 if message == format!("limit must be between 1 and {MAX_LIMIT}")
         ));
+    }
+
+    #[test]
+    fn normalize_related_limit_defaults_non_positive_values() {
+        assert_eq!(normalize_related_limit(0), DEFAULT_RELATED_LIMIT);
+        assert_eq!(normalize_related_limit(-5), DEFAULT_RELATED_LIMIT);
+        assert_eq!(normalize_related_limit(7), 7);
+    }
+
+    #[test]
+    fn select_related_candidates_excludes_the_source_hadith_regardless_of_position() {
+        let matches = vec![
+            VectorMatch {
+                hadith_id: 1,
+                score: 0.99,
+            },
+            VectorMatch {
+                hadith_id: 2,
+                score: 0.9,
+            },
+            VectorMatch {
+                hadith_id: 3,
+                score: 0.8,
+            },
+        ];
+
+        let selected = select_related_candidates(matches, 2, 5);
+
+        assert_eq!(
+            selected,
+            vec![
+                VectorMatch {
+                    hadith_id: 1,
+                    score: 0.99,
+                },
+                VectorMatch {
+                    hadith_id: 3,
+                    score: 0.8,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn select_related_candidates_truncates_to_the_limit_after_excluding_the_source() {
+        let matches = vec![
+            VectorMatch {
+                hadith_id: 10,
+                score: 1.0,
+            },
+            VectorMatch {
+                hadith_id: 1,
+                score: 0.95,
+            },
+            VectorMatch {
+                hadith_id: 2,
+                score: 0.9,
+            },
+            VectorMatch {
+                hadith_id: 3,
+                score: 0.8,
+            },
+        ];
+
+        let selected = select_related_candidates(matches, 10, 2);
+
+        assert_eq!(
+            selected,
+            vec![
+                VectorMatch {
+                    hadith_id: 1,
+                    score: 0.95,
+                },
+                VectorMatch {
+                    hadith_id: 2,
+                    score: 0.9,
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn find_related_resolves_source_hadith_before_embedding() {
+        let service = RetrievalService::new(
+            Arc::new(PanicsIfCalledEmbedder),
+            Arc::new(FakeVectorStore { matches: vec![] }),
+            test_repository(),
+        );
+
+        let result = service.find_related(1, 3).await;
+
+        assert!(
+            result.is_err(),
+            "unreachable database should surface as an error"
+        );
+    }
+
+    #[tokio::test]
+    async fn find_related_surfaces_a_database_error_instead_of_fabricating_results() {
+        let service = RetrievalService::new(
+            Arc::new(FakeEmbedder),
+            Arc::new(FakeVectorStore {
+                matches: vec![VectorMatch {
+                    hadith_id: 999_999,
+                    score: 0.9,
+                }],
+            }),
+            test_repository(),
+        );
+
+        let result = service.find_related(1, 3).await;
+
+        assert!(
+            result.is_err(),
+            "unreachable database should surface as an error, not fabricated results"
+        );
     }
 }
