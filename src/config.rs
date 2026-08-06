@@ -8,6 +8,7 @@ pub struct Config {
     pub database_max_connections: u32,
     pub vector: VectorConfig,
     pub embedding: EmbeddingConfig,
+    pub chat: ChatConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -19,6 +20,13 @@ pub struct VectorConfig {
 
 #[derive(Debug, Clone)]
 pub struct EmbeddingConfig {
+    pub base_url: String,
+    pub api_key: Option<String>,
+    pub model: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ChatConfig {
     pub base_url: String,
     pub api_key: Option<String>,
     pub model: String,
@@ -53,6 +61,7 @@ impl Config {
             database_max_connections,
             vector: VectorConfig::from_env(),
             embedding: EmbeddingConfig::from_env(),
+            chat: ChatConfig::from_env(),
         })
     }
 }
@@ -74,9 +83,21 @@ impl EmbeddingConfig {
         Self {
             base_url: env::var("EMBEDDING_BASE_URL")
                 .unwrap_or_else(|_| "https://api.openai.com/v1".to_owned()),
-            api_key: env::var("EMBEDDING_API_KEY").ok(),
+            api_key: env::var("OPEN_ROUTER_API_KEY").ok(),
             model: env::var("EMBEDDING_MODEL")
                 .unwrap_or_else(|_| "text-embedding-3-small".to_owned()),
+        }
+    }
+}
+
+impl ChatConfig {
+    pub fn from_env() -> Self {
+        Self {
+            base_url: env::var("CHAT_BASE_URL")
+                .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_owned()),
+            api_key: env::var("OPEN_ROUTER_API_KEY").ok(),
+            model: env::var("CHAT_MODEL")
+                .unwrap_or_else(|_| "deepseek/deepseek-v4-flash".to_owned()),
         }
     }
 }
@@ -101,6 +122,16 @@ impl Default for EmbeddingConfig {
     }
 }
 
+impl Default for ChatConfig {
+    fn default() -> Self {
+        Self {
+            base_url: "https://openrouter.ai/api/v1".to_owned(),
+            api_key: None,
+            model: "deepseek/deepseek-v4-flash".to_owned(),
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -108,6 +139,7 @@ impl Default for Config {
             database_max_connections: 10,
             vector: VectorConfig::default(),
             embedding: EmbeddingConfig::default(),
+            chat: ChatConfig::default(),
         }
     }
 }
@@ -132,5 +164,29 @@ mod tests {
         assert_eq!(config.provider, "qdrant");
         assert_eq!(config.qdrant_url, "http://localhost:6334");
         assert_eq!(config.qdrant_collection, "hadith_vectors");
+    }
+
+    #[test]
+    fn chat_config_default_points_at_openrouter_with_deepseek_flash() {
+        let config = ChatConfig::default();
+
+        assert_eq!(config.base_url, "https://openrouter.ai/api/v1");
+        assert_eq!(config.api_key, None);
+        assert_eq!(config.model, "deepseek/deepseek-v4-flash");
+    }
+
+    #[test]
+    fn embedding_config_reads_open_router_api_key() {
+        // SAFETY: test runs single-threaded within this process's env; no
+        // other test reads OPEN_ROUTER_API_KEY concurrently.
+        unsafe {
+            std::env::set_var("OPEN_ROUTER_API_KEY", "test-shared-key");
+        }
+        let config = EmbeddingConfig::from_env();
+        unsafe {
+            std::env::remove_var("OPEN_ROUTER_API_KEY");
+        }
+
+        assert_eq!(config.api_key.as_deref(), Some("test-shared-key"));
     }
 }
