@@ -32,6 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         pool,
         config.embedding.clone(),
         config.vector.clone(),
+        config.chat.clone(),
     ))?;
     topcoat::start(router).await?;
 

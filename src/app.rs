@@ -73,6 +73,7 @@ mod tests {
             pool,
             crate::config::EmbeddingConfig::default(),
             crate::config::VectorConfig::default(),
+            crate::config::ChatConfig::default(),
         ));
     }
 }

@@ -1,11 +1,9 @@
 use std::sync::Arc;
 use std::sync::LazyLock;
 
-use async_trait::async_trait;
 use regex::Regex;
 
 use crate::domain::RetrievedHadith;
-use crate::error::AppError;
 use crate::infrastructure::completion::ChatCompleter;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -122,7 +120,10 @@ fn parse_answer(raw: &str) -> Option<Answer> {
 
 #[cfg(test)]
 mod tests {
+    use async_trait::async_trait;
+
     use super::*;
+    use crate::error::AppError;
 
     #[test]
     fn parse_answer_splits_title_and_body() {
