@@ -145,7 +145,10 @@ mod tests {
             .await
             .expect("mocked chat completion request should succeed");
 
-        assert_eq!(content, "Title: Sincerity\nActions are judged by intentions.");
+        assert_eq!(
+            content,
+            "Title: Sincerity\nActions are judged by intentions."
+        );
     }
 
     #[tokio::test]

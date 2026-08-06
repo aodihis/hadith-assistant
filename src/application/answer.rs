@@ -127,7 +127,8 @@ mod tests {
 
     #[test]
     fn parse_answer_splits_title_and_body() {
-        let raw = "Title: Sincerity & Intention\nActions are judged by intentions.\nSecond paragraph.";
+        let raw =
+            "Title: Sincerity & Intention\nActions are judged by intentions.\nSecond paragraph.";
 
         let answer = parse_answer(raw).expect("well-formed output should parse");
 
