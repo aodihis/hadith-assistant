@@ -1,0 +1,270 @@
+use std::sync::Arc;
+use std::sync::LazyLock;
+
+use async_trait::async_trait;
+use regex::Regex;
+
+use crate::domain::RetrievedHadith;
+use crate::error::AppError;
+use crate::infrastructure::completion::ChatCompleter;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Answer {
+    pub title: String,
+    pub answer: String,
+}
+
+pub struct AnswerService {
+    completer: Arc<dyn ChatCompleter>,
+    has_api_key: bool,
+}
+
+impl AnswerService {
+    pub fn new(completer: Arc<dyn ChatCompleter>, has_api_key: bool) -> Self {
+        Self {
+            completer,
+            has_api_key,
+        }
+    }
+
+    pub async fn generate(&self, query: &str, hadiths: &[RetrievedHadith]) -> Option<Answer> {
+        if !self.has_api_key || hadiths.is_empty() {
+            return None;
+        }
+
+        let system_prompt = build_system_prompt();
+        let user_prompt = build_user_prompt(query, hadiths);
+
+        let raw = match self.completer.complete(&system_prompt, &user_prompt).await {
+            Ok(raw) => raw,
+            Err(error) => {
+                tracing::warn!(%error, "answer generation request failed");
+                return None;
+            }
+        };
+
+        match parse_answer(&raw) {
+            Some(answer) => Some(answer),
+            None => {
+                tracing::warn!("answer generation returned unparseable output");
+                None
+            }
+        }
+    }
+}
+
+fn build_system_prompt() -> String {
+    "You are a study companion summarizing hadith narrations for a Muslim \
+     asking a sincere question. You will be given a question and a numbered \
+     list of hadiths retrieved for it. Follow these rules strictly:\n\
+     \n\
+     1. Use ONLY the hadiths provided below. Never introduce hadiths, \
+        narrations, or facts from outside this list.\n\
+     2. Never issue a fiqh ruling (halal/haram, obligatory/forbidden) or \
+        claim certainty on matters of Islamic law. Stay descriptive \
+        (\"these narrations address...\", \"the Prophet is reported to have \
+        said...\") rather than prescriptive (\"you must...\", \"it is \
+        obligatory to...\").\n\
+     3. If the provided hadiths do not clearly address the question, say so \
+        plainly rather than stretching them to fit.\n\
+     4. Respond in English, in exactly this shape, with nothing before the \
+        first line and nothing after the final paragraph:\n\
+     \n\
+     Title: <a short, neutral title for this topic, under 8 words>\n\
+     <one or two short paragraphs summarizing what the provided hadiths say, \
+     in plain prose>"
+        .to_owned()
+}
+
+fn build_user_prompt(query: &str, hadiths: &[RetrievedHadith]) -> String {
+    let mut prompt = format!("Question: {query}\n\n");
+
+    for (index, hadith) in hadiths.iter().enumerate() {
+        prompt.push_str(&format!(
+            "{}. ({}, book {}, hadith {})\n",
+            index + 1,
+            hadith.collection,
+            hadith.book_number,
+            hadith.hadith_number
+        ));
+        if let Some(english_text) = &hadith.english_text {
+            prompt.push_str(&format!("English: {english_text}\n"));
+        }
+        prompt.push_str(&format!("Arabic: {}\n\n", hadith.arabic_text));
+    }
+
+    prompt
+}
+
+static TITLE_LINE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^\s*Title:\s*(.+)$").expect("valid regex"));
+
+fn parse_answer(raw: &str) -> Option<Answer> {
+    let (first_line, rest) = raw.split_once('\n').unwrap_or((raw, ""));
+
+    let title = TITLE_LINE
+        .captures(first_line)?
+        .get(1)?
+        .as_str()
+        .trim()
+        .to_owned();
+    if title.is_empty() {
+        return None;
+    }
+
+    let answer = rest.trim().to_owned();
+    if answer.is_empty() {
+        return None;
+    }
+
+    Some(Answer { title, answer })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_answer_splits_title_and_body() {
+        let raw = "Title: Sincerity & Intention\nActions are judged by intentions.\nSecond paragraph.";
+
+        let answer = parse_answer(raw).expect("well-formed output should parse");
+
+        assert_eq!(answer.title, "Sincerity & Intention");
+        assert_eq!(
+            answer.answer,
+            "Actions are judged by intentions.\nSecond paragraph."
+        );
+    }
+
+    #[test]
+    fn parse_answer_is_case_insensitive_on_the_title_label() {
+        let raw = "title: Kindness\nBe kind to others.";
+
+        let answer = parse_answer(raw).expect("lowercase title label should still parse");
+
+        assert_eq!(answer.title, "Kindness");
+    }
+
+    #[test]
+    fn parse_answer_rejects_missing_title_line() {
+        assert_eq!(parse_answer("Just some text with no title line."), None);
+    }
+
+    #[test]
+    fn parse_answer_rejects_empty_body() {
+        assert_eq!(parse_answer("Title: Something\n   \n"), None);
+    }
+
+    struct FakeCompleter {
+        response: Result<&'static str, ()>,
+    }
+
+    #[async_trait]
+    impl ChatCompleter for FakeCompleter {
+        async fn complete(
+            &self,
+            _system_prompt: &str,
+            _user_prompt: &str,
+        ) -> Result<String, AppError> {
+            match self.response {
+                Ok(text) => Ok(text.to_owned()),
+                Err(()) => Err(AppError::Internal("simulated failure".to_owned())),
+            }
+        }
+    }
+
+    struct PanicsIfCalledCompleter;
+
+    #[async_trait]
+    impl ChatCompleter for PanicsIfCalledCompleter {
+        async fn complete(
+            &self,
+            _system_prompt: &str,
+            _user_prompt: &str,
+        ) -> Result<String, AppError> {
+            panic!("completer should not be called");
+        }
+    }
+
+    fn sample_hadith() -> RetrievedHadith {
+        RetrievedHadith {
+            hadith_id: 1,
+            collection: "bukhari".to_owned(),
+            book_number: "1".to_owned(),
+            hadith_number: "1".to_owned(),
+            arabic_text: "إنما الأعمال بالنيات".to_owned(),
+            english_text: Some("Actions are but by intentions.".to_owned()),
+            score: Some(0.9),
+        }
+    }
+
+    #[tokio::test]
+    async fn generate_returns_none_for_empty_hadiths_without_calling_the_completer() {
+        let service = AnswerService::new(Arc::new(PanicsIfCalledCompleter), true);
+
+        let result = service.generate("What is intention?", &[]).await;
+
+        assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn generate_returns_none_without_an_api_key_without_calling_the_completer() {
+        let service = AnswerService::new(Arc::new(PanicsIfCalledCompleter), false);
+
+        let result = service
+            .generate("What is intention?", &[sample_hadith()])
+            .await;
+
+        assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn generate_returns_none_when_the_completer_errors() {
+        let service = AnswerService::new(Arc::new(FakeCompleter { response: Err(()) }), true);
+
+        let result = service
+            .generate("What is intention?", &[sample_hadith()])
+            .await;
+
+        assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn generate_returns_none_when_the_completer_output_is_unparseable() {
+        let service = AnswerService::new(
+            Arc::new(FakeCompleter {
+                response: Ok("not the expected shape"),
+            }),
+            true,
+        );
+
+        let result = service
+            .generate("What is intention?", &[sample_hadith()])
+            .await;
+
+        assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn generate_returns_the_parsed_answer_on_success() {
+        let service = AnswerService::new(
+            Arc::new(FakeCompleter {
+                response: Ok("Title: Sincerity\nActions are judged by intentions."),
+            }),
+            true,
+        );
+
+        let result = service
+            .generate("What is intention?", &[sample_hadith()])
+            .await;
+
+        assert_eq!(
+            result,
+            Some(Answer {
+                title: "Sincerity".to_owned(),
+                answer: "Actions are judged by intentions.".to_owned(),
+            })
+        );
+    }
+}

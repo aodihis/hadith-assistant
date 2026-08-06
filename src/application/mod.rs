@@ -1,9 +1,11 @@
+mod answer;
 mod collections;
 mod hadiths;
 mod retrieval;
 
 use std::sync::Arc;
 
+pub use answer::{Answer, AnswerService};
 pub use collections::CollectionService;
 pub use hadiths::HadithService;
 pub use retrieval::RetrievalService;
