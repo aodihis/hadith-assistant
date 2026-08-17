@@ -2,9 +2,10 @@ use std::env;
 use std::process::ExitCode;
 
 use hadith_assistant::config::{EmbeddingConfig, VectorConfig};
+use hadith_assistant::domain::HadithSearch;
 use hadith_assistant::infrastructure::embedding::OpenAiEmbedder;
 use hadith_assistant::infrastructure::persistence::hadiths::HadithRepository;
-use hadith_assistant::infrastructure::vector::QdrantVectorStore;
+use hadith_assistant::infrastructure::vector::{QdrantVectorStore, VectorStore};
 use hadith_assistant::ingestion::embedding::embed_hadiths;
 use hadith_assistant::ingestion::hadith_json::{
     ImportOptions, import_hadith_json, load_dump, validate_dump,
@@ -40,6 +41,14 @@ async fn run() -> Result<(), String> {
             .map_err(|error| error.to_string());
     }
 
+    if let Some(collection) = args.embed_collection.clone() {
+        let embedded = run_collection_embedding(&database_url, &collection, args.limit)
+            .await
+            .map_err(|error| error.to_string())?;
+        println!("embedded {embedded} records from collection `{collection}`");
+        return Ok(());
+    }
+
     let json_path = args
         .json_path
         .clone()
@@ -64,12 +73,24 @@ async fn run() -> Result<(), String> {
     .map_err(|error| error.to_string())?;
 
     println!(
-        "imported {} records ({})",
-        summary.record_count, summary.source_checksum
+        "imported {} new records, skipped {} already present ({})",
+        summary.inserted_ids.len(),
+        summary.skipped_ids.len(),
+        summary.source_checksum
     );
 
     if args.embed {
-        let embedded = run_embedding(&database_url, &summary.inserted_ids)
+        // Both sets are offered to the embedder: a skipped record may still be
+        // missing from the vector index, and run_embedding filters to whatever
+        // Qdrant does not already hold.
+        let candidates: Vec<i64> = summary
+            .inserted_ids
+            .iter()
+            .chain(summary.skipped_ids.iter())
+            .copied()
+            .collect();
+
+        let embedded = run_embedding(&database_url, &candidates)
             .await
             .map_err(|error| error.to_string())?;
         println!("embedded {embedded} records");
@@ -100,6 +121,11 @@ async fn run_backfill_narrators(database_url: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Embeds the given records, skipping any that already have a point in Qdrant.
+///
+/// Checking the index first means a re-run costs nothing for work already done,
+/// and closes gaps left by an interrupted run — a record can be in Postgres yet
+/// missing from the index.
 async fn run_embedding(database_url: &str, hadith_ids: &[i64]) -> Result<usize, String> {
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -108,10 +134,6 @@ async fn run_embedding(database_url: &str, hadith_ids: &[i64]) -> Result<usize, 
         .map_err(|error| error.to_string())?;
 
     let repository = HadithRepository::new(pool);
-    let hadiths = repository
-        .find_by_ids(hadith_ids)
-        .await
-        .map_err(|error| error.to_string())?;
 
     let embedder = OpenAiEmbedder::new(EmbeddingConfig::from_env());
     let vector_config = VectorConfig::from_env();
@@ -119,9 +141,131 @@ async fn run_embedding(database_url: &str, hadith_ids: &[i64]) -> Result<usize, 
         QdrantVectorStore::new(&vector_config.qdrant_url, vector_config.qdrant_collection)
             .map_err(|error| error.to_string())?;
 
+    let already_indexed = vector_store
+        .existing_ids(hadith_ids)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let missing: Vec<i64> = hadith_ids
+        .iter()
+        .copied()
+        .filter(|id| !already_indexed.contains(id))
+        .collect();
+
+    if !already_indexed.is_empty() {
+        println!(
+            "{} already in the vector index, embedding the remaining {}",
+            already_indexed.len(),
+            missing.len()
+        );
+    }
+
+    if missing.is_empty() {
+        return Ok(0);
+    }
+
+    let hadiths = repository
+        .find_by_ids(&missing)
+        .await
+        .map_err(|error| error.to_string())?;
+
     embed_hadiths(&embedder, &vector_store, &hadiths)
         .await
         .map_err(|error| error.to_string())
+}
+
+/// Embeds records that are already in Postgres, one page at a time.
+///
+/// `--embed` only covers ids from the import that just ran, so there was no way
+/// to build the vector index for a collection imported earlier. This reads
+/// canonical rows and writes only to Qdrant — it never inserts, updates, or
+/// deletes canonical data.
+async fn run_collection_embedding(
+    database_url: &str,
+    collection: &str,
+    limit: Option<usize>,
+) -> Result<usize, String> {
+    const PAGE_SIZE: i64 = 200;
+
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(database_url)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let repository = HadithRepository::new(pool);
+    let embedder = OpenAiEmbedder::new(EmbeddingConfig::from_env());
+    let vector_config = VectorConfig::from_env();
+    let vector_store =
+        QdrantVectorStore::new(&vector_config.qdrant_url, vector_config.qdrant_collection)
+            .map_err(|error| error.to_string())?;
+
+    let mut embedded = 0;
+    let mut seen = 0;
+    let mut offset = 0;
+
+    loop {
+        if limit.is_some_and(|limit| seen >= limit) {
+            break;
+        }
+
+        let mut page = repository
+            .list(&HadithSearch {
+                collection: Some(collection.to_owned()),
+                book_number: None,
+                hadith_number: None,
+                grade: None,
+                limit: PAGE_SIZE,
+                offset,
+            })
+            .await
+            .map_err(|error| error.to_string())?;
+
+        if page.is_empty() {
+            break;
+        }
+
+        let count = page.len();
+
+        // `--limit` bounds how many canonical records are considered, so a
+        // partial run is reproducible: the same slug and limit always cover the
+        // same records.
+        if let Some(limit) = limit {
+            page.truncate(limit.saturating_sub(seen));
+        }
+        seen += page.len();
+
+        let ids: Vec<i64> = page.iter().map(|hadith| hadith.id).collect();
+        let already_indexed = vector_store
+            .existing_ids(&ids)
+            .await
+            .map_err(|error| error.to_string())?;
+
+        let pending: Vec<_> = page
+            .into_iter()
+            .filter(|hadith| !already_indexed.contains(&hadith.id))
+            .collect();
+
+        if !pending.is_empty() {
+            embedded += embed_hadiths(&embedder, &vector_store, &pending)
+                .await
+                .map_err(|error| error.to_string())?;
+            println!("embedded {embedded} records so far…");
+        }
+
+        if (count as i64) < PAGE_SIZE {
+            break;
+        }
+        offset += PAGE_SIZE;
+    }
+
+    if seen == 0 {
+        return Err(format!(
+            "no hadiths found in collection `{collection}` — check the slug"
+        ));
+    }
+
+    Ok(embedded)
 }
 
 #[derive(Debug)]
@@ -130,6 +274,8 @@ struct Args {
     database_url: Option<String>,
     validate_only: bool,
     embed: bool,
+    embed_collection: Option<String>,
+    limit: Option<usize>,
     backfill_narrators: bool,
 }
 
@@ -139,6 +285,8 @@ impl Args {
         let mut database_url = None;
         let mut validate_only = false;
         let mut embed = false;
+        let mut embed_collection = None;
+        let mut limit = None;
         let mut backfill_narrators = false;
 
         let mut args = args.into_iter();
@@ -152,6 +300,19 @@ impl Args {
                 }
                 "--embed" => {
                     embed = true;
+                }
+                "--embed-collection" => {
+                    embed_collection = Some(require_value(&mut args, "--embed-collection")?);
+                }
+                "--limit" => {
+                    let raw = require_value(&mut args, "--limit")?;
+                    let value = raw
+                        .parse::<usize>()
+                        .map_err(|error| format!("invalid --limit `{raw}`: {error}"))?;
+                    if value == 0 {
+                        return Err("--limit must be greater than zero".to_owned());
+                    }
+                    limit = Some(value);
                 }
                 "--backfill-narrators" => {
                     backfill_narrators = true;
@@ -177,6 +338,13 @@ impl Args {
                     usage()
                 ));
             }
+        } else if embed_collection.is_some() {
+            if json_path.is_some() {
+                return Err(format!(
+                    "--embed-collection takes no <json-path>\n\n{}",
+                    usage()
+                ));
+            }
         } else if json_path.is_none() {
             return Err(usage());
         }
@@ -186,6 +354,8 @@ impl Args {
             database_url,
             validate_only,
             embed,
+            embed_collection,
+            limit,
             backfill_narrators,
         })
     }
@@ -198,7 +368,7 @@ fn require_value(args: &mut impl Iterator<Item = String>, name: &str) -> Result<
 }
 
 fn usage() -> String {
-    "usage: import_hadiths <json-path> [--database-url <url>] [--validate-only] [--embed]\n       import_hadiths --backfill-narrators [--database-url <url>]"
+    "usage: import_hadiths <json-path> [--database-url <url>] [--validate-only] [--embed]\n       import_hadiths --embed-collection <slug> [--database-url <url>] [--limit <n>]\n       import_hadiths --backfill-narrators [--database-url <url>]"
         .to_owned()
 }
 

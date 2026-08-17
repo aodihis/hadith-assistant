@@ -1,10 +1,11 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use qdrant_client::qdrant::point_id::PointIdOptions;
 use qdrant_client::qdrant::{
-    Condition, CreateCollectionBuilder, Distance, Filter, PointId, PointStruct, QueryPointsBuilder,
-    UpsertPointsBuilder, VectorParamsBuilder,
+    Condition, CreateCollectionBuilder, Distance, Filter, GetPointsBuilder, PointId, PointStruct,
+    QueryPointsBuilder, UpsertPointsBuilder, VectorParamsBuilder,
 };
 use qdrant_client::{Payload, Qdrant};
 
@@ -71,6 +72,35 @@ impl VectorStore for QdrantVectorStore {
             .map_err(|error| AppError::Internal(format!("qdrant upsert failed: {error}")))?;
 
         Ok(())
+    }
+
+    async fn existing_ids(&self, hadith_ids: &[i64]) -> Result<HashSet<i64>, AppError> {
+        if hadith_ids.is_empty() {
+            return Ok(HashSet::new());
+        }
+
+        // Points are written with the hadith id as a numeric point id (see
+        // to_point_struct), so the lookup key must match that representation.
+        let ids: Vec<PointId> = hadith_ids
+            .iter()
+            .map(|id| PointId::from(*id as u64))
+            .collect();
+
+        let response = self
+            .client
+            .get_points(
+                GetPointsBuilder::new(self.collection_name.clone(), ids)
+                    .with_payload(false)
+                    .with_vectors(false),
+            )
+            .await
+            .map_err(|error| AppError::Internal(format!("qdrant get_points failed: {error}")))?;
+
+        Ok(response
+            .result
+            .into_iter()
+            .filter_map(|point| point_id_to_hadith_id(point.id))
+            .collect())
     }
 
     async fn search(

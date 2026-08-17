@@ -23,6 +23,15 @@ pub struct VectorMatch {
 pub trait VectorStore: Send + Sync {
     async fn ensure_collection(&self, vector_size: u64) -> Result<(), AppError>;
     async fn upsert(&self, points: Vec<EmbeddingPoint>) -> Result<(), AppError>;
+    /// Which of `hadith_ids` already have a point in the index.
+    ///
+    /// Lets an import skip paying for embeddings it already holds, and lets it
+    /// close a gap left by an interrupted run — a record can be in Postgres but
+    /// missing from the index.
+    async fn existing_ids(
+        &self,
+        hadith_ids: &[i64],
+    ) -> Result<std::collections::HashSet<i64>, AppError>;
     async fn search(
         &self,
         vector: Vec<f32>,

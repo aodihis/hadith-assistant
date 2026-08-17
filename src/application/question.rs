@@ -79,6 +79,13 @@ mod tests {
             Ok(())
         }
 
+        async fn existing_ids(
+            &self,
+            _hadith_ids: &[i64],
+        ) -> Result<std::collections::HashSet<i64>, AppError> {
+            Ok(std::collections::HashSet::new())
+        }
+
         async fn search(
             &self,
             _vector: Vec<f32>,

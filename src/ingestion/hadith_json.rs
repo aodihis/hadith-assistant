@@ -71,6 +71,10 @@ pub struct ImportSummary {
     pub record_count: usize,
     pub source_checksum: String,
     pub inserted_ids: Vec<i64>,
+    /// Records already present in Postgres. Carried separately from
+    /// `inserted_ids` so an embed pass can close a vector-index gap for
+    /// hadiths that were imported by an earlier, interrupted run.
+    pub skipped_ids: Vec<i64>,
 }
 
 pub fn load_dump(path: impl AsRef<Path>) -> Result<(HadithJsonDump, String), ImportError> {
@@ -127,8 +131,17 @@ async fn import_dump(
     let mut tx = pool.begin().await?;
 
     let mut inserted_ids = Vec::with_capacity(dump.hadith_table.len());
+    let mut skipped_ids = Vec::new();
+
     for record in &dump.hadith_table {
-        inserted_ids.push(insert_record(&mut tx, record).await?);
+        // (arabic_urn, english_urn) is the source dump's own stable identity,
+        // so a re-import recognises records it already holds instead of
+        // duplicating canonical text. The id is still collected, because the
+        // record may exist in Postgres yet be missing from the vector index.
+        match find_existing_id(&mut tx, record).await? {
+            Some(existing_id) => skipped_ids.push(existing_id),
+            None => inserted_ids.push(insert_record(&mut tx, record).await?),
+        }
     }
 
     tx.commit().await?;
@@ -137,7 +150,27 @@ async fn import_dump(
         record_count: dump.hadith_table.len(),
         source_checksum: source_checksum.to_owned(),
         inserted_ids,
+        skipped_ids,
     })
+}
+
+/// Looks up a record by the source dump's stable identifiers.
+///
+/// Returns the canonical row id when this hadith has already been imported, so
+/// the caller can skip the insert without losing track of the record.
+async fn find_existing_id(
+    tx: &mut Transaction<'_, Postgres>,
+    record: &RawHadithRecord,
+) -> Result<Option<i64>, ImportError> {
+    let id = sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM hadiths WHERE arabic_urn = $1 AND english_urn = $2",
+    )
+    .bind(record.arabic_urn)
+    .bind(record.english_urn)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    Ok(id)
 }
 
 async fn insert_record(
