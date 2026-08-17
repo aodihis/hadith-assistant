@@ -40,6 +40,7 @@ pub struct AppServices {
     /// answer never travels without the records it was grounded in.
     pub questions: Arc<QuestionService>,
     pub sessions: Arc<SessionService>,
+    pub conversations: Arc<ConversationService>,
 }
 
 impl AppServices {
@@ -61,9 +62,22 @@ impl AppServices {
 
         let has_chat_api_key = chat.api_key.is_some();
         let answer_options = CompletionOptions::new(chat.temperature, chat.max_tokens);
+        let summary_options =
+            CompletionOptions::new(chat.summary_temperature, chat.summary_max_tokens);
+        let limits = HistoryLimits {
+            max_question_chars: chat.max_question_chars,
+            max_answer_chars: 4_000,
+            max_summary_chars: 4_000,
+            // A hard ceiling above the compaction threshold, tolerating a turn
+            // that has not been compacted yet plus some slack.
+            max_turns: chat.history_max_turns + 4,
+            compact_after_turns: chat.history_max_turns,
+            keep_turns: chat.history_keep_turns,
+            max_history_chars: chat.history_max_chars,
+        };
         let completer: Arc<dyn ChatCompleter> = Arc::new(OpenAiChatClient::new(chat));
         let answers = Arc::new(AnswerService::new(
-            completer,
+            completer.clone(),
             has_chat_api_key,
             answer_options,
         ));
@@ -75,6 +89,17 @@ impl AppServices {
             narrator_repository,
         ));
         let questions = Arc::new(QuestionService::new(retrieval.clone(), answers));
+        let conversations = Arc::new(ConversationService::new(
+            retrieval.clone(),
+            completer,
+            ConversationConfig {
+                limits,
+                answer_options,
+                summary_options,
+                retrieval_limit: 5,
+            },
+            has_chat_api_key,
+        ));
 
         Self {
             collections: Arc::new(CollectionService::new(pool.clone())),
@@ -82,6 +107,7 @@ impl AppServices {
             retrieval,
             questions,
             sessions: Arc::new(SessionService::new(session)),
+            conversations,
         }
     }
 }

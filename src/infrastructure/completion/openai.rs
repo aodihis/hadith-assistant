@@ -18,10 +18,17 @@ pub struct OpenAiChatClient {
 
 impl OpenAiChatClient {
     pub fn new(config: ChatConfig) -> Self {
+        // Deliberately NOT a total-request timeout. A streamed completion's
+        // body is the answer being written, so a whole-request deadline
+        // truncates long answers mid-sentence — and a truncated reply is
+        // indistinguishable from a broken one. Bound stalls instead: refuse to
+        // wait forever to connect, or for the next byte, while letting a
+        // healthy generation take as long as it needs.
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(20))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .read_timeout(std::time::Duration::from_secs(30))
             .build()
-            .expect("reqwest client with a fixed timeout should always build");
+            .expect("reqwest client with stall timeouts should always build");
 
         Self {
             client,

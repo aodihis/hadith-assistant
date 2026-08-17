@@ -1,4 +1,5 @@
 mod answers;
+mod chat;
 mod collections;
 mod hadiths;
 mod health;
