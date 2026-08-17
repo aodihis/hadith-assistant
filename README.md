@@ -30,8 +30,8 @@ deliberately.
 ├── docs/                           # API, ingestion, and domain documentation
 ├── migrations/                     # PostgreSQL schema history
 ├── src/
-│   ├── app.rs                      # Root layout, home page, router assembly
-│   ├── app/
+│   ├── web.rs                      # Root layout, home page, router assembly
+│   ├── web/
 │   │   ├── hadiths.rs              # Server-rendered Hadith browser
 │   │   ├── api.rs                  # API layer and JSON error adapter
 │   │   └── api/                    # Module-derived Topcoat API routes
@@ -46,7 +46,7 @@ deliberately.
 └── Cargo.toml
 ```
 
-The `app` layer owns HTTP and HTML concerns. It calls the same services that
+The `web` layer owns HTTP and HTML concerns. It calls the same services that
 back the JSON API, so there is no separate frontend project and no duplicate
 business logic.
 
@@ -121,6 +121,7 @@ JSON API:
 - `GET /api/hadiths/{id}`
 - `GET /api/hadiths/by-reference/{collection}/{book_number}/{hadith_number}`
 - `POST /api/retrieval`
+- `POST /api/answers`
 
 The old backend routes moved under `/api` during the full-stack migration.
 Detailed request and response notes are in [docs/api.md](docs/api.md).

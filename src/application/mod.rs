@@ -1,6 +1,7 @@
 mod answer;
 mod collections;
 mod hadiths;
+mod question;
 mod retrieval;
 
 use std::sync::Arc;
@@ -8,6 +9,7 @@ use std::sync::Arc;
 pub use answer::{Answer, AnswerService};
 pub use collections::CollectionService;
 pub use hadiths::HadithService;
+pub use question::{AnsweredQuestion, QuestionService};
 pub use retrieval::RetrievalService;
 use sqlx::PgPool;
 
@@ -22,7 +24,9 @@ pub struct AppServices {
     pub collections: Arc<CollectionService>,
     pub hadiths: Arc<HadithService>,
     pub retrieval: Arc<RetrievalService>,
-    pub answers: Arc<AnswerService>,
+    /// Generation is only reachable through `questions`, which guarantees an
+    /// answer never travels without the records it was grounded in.
+    pub questions: Arc<QuestionService>,
 }
 
 impl AppServices {
@@ -44,15 +48,18 @@ impl AppServices {
         let completer: Arc<dyn ChatCompleter> = Arc::new(OpenAiChatClient::new(chat));
         let answers = Arc::new(AnswerService::new(completer, has_chat_api_key));
 
+        let retrieval = Arc::new(RetrievalService::new(
+            embedder,
+            vector_store,
+            hadith_repository,
+        ));
+        let questions = Arc::new(QuestionService::new(retrieval.clone(), answers));
+
         Self {
             collections: Arc::new(CollectionService::new(pool.clone())),
             hadiths: Arc::new(HadithService::new(pool)),
-            retrieval: Arc::new(RetrievalService::new(
-                embedder,
-                vector_store,
-                hadith_repository,
-            )),
-            answers,
+            retrieval,
+            questions,
         }
     }
 }

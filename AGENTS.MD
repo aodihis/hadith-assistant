@@ -27,8 +27,8 @@ version and expect module, macro, or asset behavior to change between releases.
 
 ```text
 src/
-  app.rs                       root Topcoat router, layout, and home page
-  app/                         server-rendered pages and JSON route adapters
+  web.rs                       root Topcoat router, layout, and home page
+  web/                         server-rendered pages and JSON route adapters
     api.rs                     shared API layer and error response mapping
     api/                       module-derived /api routes
   application/                 use cases and dependency composition
@@ -41,7 +41,7 @@ src/
 
 Keep these boundaries:
 
-- `app` owns Topcoat macros, request parsing, HTML, HTTP status codes, and DTOs.
+- `web` owns Topcoat macros, request parsing, HTML, HTTP status codes, and DTOs.
 - `application` owns validation and use-case coordination. It must not depend on
   Topcoat request or response types.
 - `domain` owns core data shapes and invariants. Do not put SQL or HTML here.
@@ -58,8 +58,8 @@ page-specific data layer.
 
 ## Topcoat conventions
 
-- Use `topcoat::router::module_router!()` from `src/app.rs`.
-- Keep route modules aligned with URLs. A file under `src/app/api/` normally
+- Use `topcoat::router::module_router!()` from `src/web.rs`.
+- Keep route modules aligned with URLs. A file under `src/web/api/` normally
   becomes a route under `/api`.
 - Register long-lived values once through `.app_context(...)`; access them with
   `app_context::<T>(cx)`.
@@ -71,7 +71,7 @@ page-specific data layer.
   string-built HTML.
 - Declare browser files with `asset!` and load the matching `AssetBundle` on the
   router. Production images must ship the bundle next to the executable.
-- Keep the stable JSON error envelope in `src/app/api.rs`; do not expose raw SQL
+- Keep the stable JSON error envelope in `src/web/api.rs`; do not expose raw SQL
   errors, stack traces, secrets, or provider payloads.
 - When a Topcoat upgrade changes public APIs, update `Cargo.lock`, README
   instructions, Docker asset building, and affected tests in the same change.

@@ -1,6 +1,6 @@
-use hadith_assistant::app;
 use hadith_assistant::application::AppServices;
 use hadith_assistant::config::Config;
+use hadith_assistant::web;
 use sqlx::postgres::PgPoolOptions;
 use tracing_subscriber::EnvFilter;
 
@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     sqlx::migrate!().run(&pool).await?;
     tracing::info!("database migrations completed");
 
-    let router = app::router(AppServices::new(
+    let router = web::router(AppServices::new(
         pool,
         config.embedding.clone(),
         config.vector.clone(),

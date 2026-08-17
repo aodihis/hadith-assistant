@@ -4,9 +4,9 @@ use topcoat::{
     router::{path_param, route},
 };
 
-use crate::app::api::ApiResponse;
 use crate::application::AppServices;
 use crate::domain::Hadith;
+use crate::web::api::ApiResponse;
 
 use super::super::Collection;
 use super::BookNumber;

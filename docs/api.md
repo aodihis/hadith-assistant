@@ -139,6 +139,64 @@ from the response rather than fabricated; it is logged as a warning.
 Hadiths are indexed into Qdrant via `import_hadiths --embed`, documented in
 [docs/import-hadith-json.md](import-hadith-json.md).
 
+## Answers
+
+```http
+POST /api/answers
+Content-Type: application/json
+```
+
+```json
+{
+  "query": "What did the Prophet say about intentions?",
+  "collection": "bukhari",
+  "limit": 5
+}
+```
+
+The request body matches `/api/retrieval`: `collection` and `limit` are
+optional, `limit` defaults to `10` and is capped at `20`.
+
+Response:
+
+```json
+{
+  "query": "What did the Prophet say about intentions?",
+  "answer": {
+    "title": "Intention Behind Actions",
+    "answer": "These narrations report that deeds are judged by their intentions..."
+  },
+  "citations": [
+    {
+      "hadith_id": 1,
+      "collection": "bukhari",
+      "book_number": "1",
+      "hadith_number": "1",
+      "arabic_text": "...",
+      "english_text": "...",
+      "score": 0.83
+    }
+  ]
+}
+```
+
+This endpoint runs retrieval first, then generates an answer constrained to
+the retrieved records. `citations` is always the full set of canonical records
+the answer was generated from, so generated text is never returned without its
+sources.
+
+`answer` is `null` — with `citations` still populated — whenever generation is
+unavailable rather than successful:
+
+- `OPEN_ROUTER_API_KEY` is unset, so no chat provider is configured.
+- Retrieval matched nothing, so there is nothing to ground an answer in. The
+  provider is not called at all in this case.
+- The provider request failed, or returned output that did not match the
+  expected shape.
+
+A `null` answer is a successful `200` response, not an error. The endpoint
+never substitutes an ungrounded or fabricated answer for a missing one.
+
 ## Migration from the backend-only layout
 
 The full-stack migration moved the former endpoints under `/api`:
