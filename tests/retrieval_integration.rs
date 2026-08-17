@@ -7,6 +7,7 @@ use hadith_assistant::config::EmbeddingConfig;
 use hadith_assistant::domain::RetrievalQuery;
 use hadith_assistant::infrastructure::embedding::OpenAiEmbedder;
 use hadith_assistant::infrastructure::persistence::hadiths::HadithRepository;
+use hadith_assistant::infrastructure::persistence::narrators::NarratorRepository;
 use hadith_assistant::infrastructure::vector::QdrantVectorStore;
 use hadith_assistant::ingestion::embedding::embed_hadiths;
 use qdrant_client::Qdrant;
@@ -38,7 +39,8 @@ async fn retrieve_resolves_a_seeded_hadith_through_real_postgres_and_qdrant(pool
 async fn run(pool: PgPool, collection_name: String) -> Result<(), Box<dyn std::error::Error>> {
     let hadith_id = seed_hadith(&pool).await?;
 
-    let repository = HadithRepository::new(pool);
+    let repository = HadithRepository::new(pool.clone());
+    let narrators = NarratorRepository::new(pool);
     let seeded_hadith = repository.find_by_id(hadith_id).await?;
 
     let embedding_server = MockServer::start().await;
@@ -64,7 +66,12 @@ async fn run(pool: PgPool, collection_name: String) -> Result<(), Box<dyn std::e
     )
     .await?;
 
-    let service = RetrievalService::new(Arc::new(embedder), Arc::new(vector_store), repository);
+    let service = RetrievalService::new(
+        Arc::new(embedder),
+        Arc::new(vector_store),
+        repository,
+        narrators,
+    );
 
     let result = service
         .retrieve(RetrievalQuery {

@@ -17,6 +17,7 @@ use crate::config::{ChatConfig, EmbeddingConfig, VectorConfig};
 use crate::infrastructure::completion::{ChatCompleter, CompletionOptions, OpenAiChatClient};
 use crate::infrastructure::embedding::{Embedder, OpenAiEmbedder};
 use crate::infrastructure::persistence::hadiths::HadithRepository;
+use crate::infrastructure::persistence::narrators::NarratorRepository;
 use crate::infrastructure::vector::{QdrantVectorStore, VectorStore};
 
 #[derive(Clone)]
@@ -37,6 +38,7 @@ impl AppServices {
         chat: ChatConfig,
     ) -> Self {
         let hadith_repository = HadithRepository::new(pool.clone());
+        let narrator_repository = NarratorRepository::new(pool.clone());
 
         let embedder: Arc<dyn Embedder> = Arc::new(OpenAiEmbedder::new(embedding));
         let vector_store: Arc<dyn VectorStore> = Arc::new(
@@ -57,6 +59,7 @@ impl AppServices {
             embedder,
             vector_store,
             hadith_repository,
+            narrator_repository,
         ));
         let questions = Arc::new(QuestionService::new(retrieval.clone(), answers));
 

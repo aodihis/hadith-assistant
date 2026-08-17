@@ -1,9 +1,13 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::domain::{RetrievalQuery, RetrievalResult, RetrievedHadith};
+use crate::domain::{
+    Hadith, Narrator, NarratorRef, RetrievalQuery, RetrievalResult, RetrievedHadith,
+};
 use crate::error::AppError;
 use crate::infrastructure::embedding::Embedder;
 use crate::infrastructure::persistence::hadiths::HadithRepository;
+use crate::infrastructure::persistence::narrators::NarratorRepository;
 use crate::infrastructure::vector::{VectorMatch, VectorStore};
 
 const DEFAULT_LIMIT: i64 = 10;
@@ -15,6 +19,7 @@ pub struct RetrievalService {
     embedder: Arc<dyn Embedder>,
     vector_store: Arc<dyn VectorStore>,
     hadiths: HadithRepository,
+    narrators: NarratorRepository,
 }
 
 impl RetrievalService {
@@ -22,12 +27,35 @@ impl RetrievalService {
         embedder: Arc<dyn Embedder>,
         vector_store: Arc<dyn VectorStore>,
         hadiths: HadithRepository,
+        narrators: NarratorRepository,
     ) -> Self {
         Self {
             embedder,
             vector_store,
             hadiths,
+            narrators,
         }
+    }
+
+    /// Hydrates vector matches into canonical records in two queries rather
+    /// than one per hit, then restores the vector ranking that the batch
+    /// lookups discard.
+    async fn resolve_matches(
+        &self,
+        matches: Vec<VectorMatch>,
+    ) -> Result<Vec<RetrievedHadith>, AppError> {
+        if matches.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let ids: Vec<i64> = matches
+            .iter()
+            .map(|candidate| candidate.hadith_id)
+            .collect();
+        let hadiths = self.hadiths.find_by_ids(&ids).await?;
+        let narrators = self.narrators.find_primary_by_hadith_ids(&ids).await?;
+
+        Ok(assemble(matches, hadiths, narrators))
     }
 
     pub async fn retrieve(&self, query: RetrievalQuery) -> Result<RetrievalResult, AppError> {
@@ -46,27 +74,7 @@ impl RetrievalService {
             .search(vector, query.collection.as_deref(), query.limit)
             .await?;
 
-        let mut results = Vec::with_capacity(matches.len());
-        for candidate in matches {
-            match self.hadiths.find_by_id(candidate.hadith_id).await {
-                Ok(hadith) => results.push(RetrievedHadith {
-                    hadith_id: hadith.id,
-                    collection: hadith.collection,
-                    book_number: hadith.book_number,
-                    hadith_number: hadith.hadith_number,
-                    arabic_text: hadith.arabic_text,
-                    english_text: hadith.english_text,
-                    score: Some(candidate.score as f64),
-                }),
-                Err(AppError::NotFound(_)) => {
-                    tracing::warn!(
-                        hadith_id = candidate.hadith_id,
-                        "retrieval candidate no longer resolves to a canonical record"
-                    );
-                }
-                Err(error) => return Err(error),
-            }
-        }
+        let results = self.resolve_matches(matches).await?;
 
         Ok(RetrievalResult {
             query: query.query,
@@ -95,29 +103,7 @@ impl RetrievalService {
         let matches = self.vector_store.search(vector, None, limit + 1).await?;
         let candidates = select_related_candidates(matches, hadith_id, limit);
 
-        let mut results = Vec::with_capacity(candidates.len());
-        for candidate in candidates {
-            match self.hadiths.find_by_id(candidate.hadith_id).await {
-                Ok(hadith) => results.push(RetrievedHadith {
-                    hadith_id: hadith.id,
-                    collection: hadith.collection,
-                    book_number: hadith.book_number,
-                    hadith_number: hadith.hadith_number,
-                    arabic_text: hadith.arabic_text,
-                    english_text: hadith.english_text,
-                    score: Some(candidate.score as f64),
-                }),
-                Err(AppError::NotFound(_)) => {
-                    tracing::warn!(
-                        hadith_id = candidate.hadith_id,
-                        "related candidate no longer resolves to a canonical record"
-                    );
-                }
-                Err(error) => return Err(error),
-            }
-        }
-
-        Ok(results)
+        self.resolve_matches(candidates).await
     }
 }
 
@@ -155,6 +141,55 @@ fn normalize_related_limit(limit: i64) -> i64 {
     } else {
         limit
     }
+}
+
+/// Joins vector matches to their canonical records.
+///
+/// Iterates `matches` rather than `hadiths` because the batch lookup returns
+/// rows in database order — walking the matches is what preserves the vector
+/// ranking. Scores come from the match, never recomputed. A match whose record
+/// no longer exists is dropped and logged rather than fabricated, and dropping
+/// it does not disturb the order of the rest.
+fn assemble(
+    matches: Vec<VectorMatch>,
+    hadiths: Vec<Hadith>,
+    mut narrators: HashMap<i64, Narrator>,
+) -> Vec<RetrievedHadith> {
+    let mut by_id: HashMap<i64, Hadith> = hadiths
+        .into_iter()
+        .map(|hadith| (hadith.id, hadith))
+        .collect();
+
+    let mut results = Vec::with_capacity(matches.len());
+    for candidate in matches {
+        let Some(hadith) = by_id.remove(&candidate.hadith_id) else {
+            tracing::warn!(
+                hadith_id = candidate.hadith_id,
+                "retrieval candidate no longer resolves to a canonical record"
+            );
+            continue;
+        };
+
+        results.push(RetrievedHadith {
+            hadith_id: hadith.id,
+            collection: hadith.collection,
+            book_number: hadith.book_number,
+            hadith_number: hadith.hadith_number,
+            arabic_text: hadith.arabic_text,
+            english_text: hadith.english_text,
+            arabic_grade: hadith.arabic_grade,
+            english_grade: hadith.english_grade,
+            narrator: narrators
+                .remove(&candidate.hadith_id)
+                .map(|narrator| NarratorRef {
+                    name: narrator.name,
+                    role: narrator.role,
+                }),
+            score: Some(candidate.score as f64),
+        });
+    }
+
+    results
 }
 
 fn select_related_candidates(
@@ -218,22 +253,32 @@ mod tests {
         }
     }
 
-    fn test_repository() -> HadithRepository {
+    fn test_repositories() -> (HadithRepository, NarratorRepository) {
         use sqlx::postgres::PgPoolOptions;
 
         let pool = PgPoolOptions::new()
             .connect_lazy("postgres://postgres:postgres@localhost/hadiths")
             .expect("test database URL should parse");
 
-        HadithRepository::new(pool)
+        (
+            HadithRepository::new(pool.clone()),
+            NarratorRepository::new(pool),
+        )
+    }
+
+    fn test_service(
+        embedder: Arc<dyn Embedder>,
+        vector_store: Arc<dyn VectorStore>,
+    ) -> RetrievalService {
+        let (hadiths, narrators) = test_repositories();
+        RetrievalService::new(embedder, vector_store, hadiths, narrators)
     }
 
     #[tokio::test]
     async fn retrieve_returns_validation_error_for_empty_query() {
-        let service = RetrievalService::new(
+        let service = test_service(
             Arc::new(FakeEmbedder),
             Arc::new(FakeVectorStore { matches: vec![] }),
-            test_repository(),
         );
 
         let error = service
@@ -253,7 +298,7 @@ mod tests {
 
     #[tokio::test]
     async fn retrieve_surfaces_a_database_error_instead_of_fabricating_results() {
-        let service = RetrievalService::new(
+        let service = test_service(
             Arc::new(FakeEmbedder),
             Arc::new(FakeVectorStore {
                 matches: vec![VectorMatch {
@@ -261,7 +306,6 @@ mod tests {
                     score: 0.9,
                 }],
             }),
-            test_repository(),
         );
 
         // No live database in this test; find_by_id against a lazy pool with no
@@ -348,6 +392,113 @@ mod tests {
         assert_eq!(normalize_related_limit(7), 7);
     }
 
+    fn hadith_row(id: i64) -> Hadith {
+        Hadith {
+            id,
+            collection_id: 1,
+            collection: "bukhari".to_owned(),
+            book_number: "1".to_owned(),
+            bab_id: 1.0,
+            english_bab_number: None,
+            arabic_bab_number: None,
+            hadith_number: id.to_string(),
+            our_hadith_number: id as i32,
+            arabic_urn: id,
+            arabic_bab_name: None,
+            arabic_text: format!("arabic {id}"),
+            arabic_transliteration: None,
+            arabic_grade: "صحيح".to_owned(),
+            english_urn: id,
+            english_bab_name: None,
+            english_text: Some(format!("english {id}")),
+            english_grade: "Sahih".to_owned(),
+            last_updated: None,
+            xrefs: String::new(),
+        }
+    }
+
+    fn narrator_row(hadith_id: i64, name: &str) -> Narrator {
+        Narrator {
+            id: hadith_id,
+            hadith_id,
+            external_id: None,
+            role: "sahabi".to_owned(),
+            name: name.to_owned(),
+            position: 0,
+        }
+    }
+
+    fn vector_match(hadith_id: i64, score: f32) -> VectorMatch {
+        VectorMatch { hadith_id, score }
+    }
+
+    #[test]
+    fn assemble_preserves_vector_rank_even_though_the_batch_lookup_returns_id_order() {
+        // The vector ranks 30 first, then 10, then 20 — but find_by_ids ends in
+        // ORDER BY h.id, so relying on the row order would silently reorder
+        // results by id and destroy the ranking.
+        let matches = vec![
+            vector_match(30, 0.91),
+            vector_match(10, 0.75),
+            vector_match(20, 0.60),
+        ];
+        let hadiths = vec![hadith_row(10), hadith_row(20), hadith_row(30)];
+
+        let results = assemble(matches, hadiths, HashMap::new());
+
+        assert_eq!(
+            results
+                .iter()
+                .map(|hadith| hadith.hadith_id)
+                .collect::<Vec<_>>(),
+            vec![30, 10, 20]
+        );
+        assert_eq!(results[0].score, Some(0.91f32 as f64));
+    }
+
+    #[test]
+    fn assemble_skips_a_candidate_with_no_canonical_record_without_shifting_the_rest() {
+        let matches = vec![
+            vector_match(10, 0.9),
+            vector_match(999, 0.8),
+            vector_match(20, 0.7),
+        ];
+        let hadiths = vec![hadith_row(10), hadith_row(20)];
+
+        let results = assemble(matches, hadiths, HashMap::new());
+
+        assert_eq!(
+            results
+                .iter()
+                .map(|hadith| hadith.hadith_id)
+                .collect::<Vec<_>>(),
+            vec![10, 20],
+            "the unresolvable candidate is dropped, never fabricated"
+        );
+    }
+
+    #[test]
+    fn assemble_carries_grades_verbatim_and_attaches_the_primary_narrator() {
+        let matches = vec![vector_match(10, 0.9), vector_match(20, 0.8)];
+        let hadiths = vec![hadith_row(10), hadith_row(20)];
+        let narrators = HashMap::from([(10, narrator_row(10, "Umar ibn al-Khattab"))]);
+
+        let results = assemble(matches, hadiths, narrators);
+
+        assert_eq!(results[0].english_grade, "Sahih");
+        assert_eq!(results[0].arabic_grade, "صحيح");
+        let narrator = results[0]
+            .narrator
+            .as_ref()
+            .expect("hadith 10 has a narrator row");
+        assert_eq!(narrator.name, "Umar ibn al-Khattab");
+        assert_eq!(narrator.role, "sahabi");
+        assert!(
+            results[1].narrator.is_none(),
+            "a hadith with no narrator row reports None rather than a placeholder"
+        );
+    }
+
     #[test]
     fn select_related_candidates_excludes_the_source_hadith_regardless_of_position() {
         let matches = vec![
@@ -422,10 +573,9 @@ mod tests {
 
     #[tokio::test]
     async fn find_related_resolves_source_hadith_before_embedding() {
-        let service = RetrievalService::new(
+        let service = test_service(
             Arc::new(PanicsIfCalledEmbedder),
             Arc::new(FakeVectorStore { matches: vec![] }),
-            test_repository(),
         );
 
         let result = service.find_related(1, 3).await;
@@ -438,7 +588,7 @@ mod tests {
 
     #[tokio::test]
     async fn find_related_surfaces_a_database_error_instead_of_fabricating_results() {
-        let service = RetrievalService::new(
+        let service = test_service(
             Arc::new(FakeEmbedder),
             Arc::new(FakeVectorStore {
                 matches: vec![VectorMatch {
@@ -446,7 +596,6 @@ mod tests {
                     score: 0.9,
                 }],
             }),
-            test_repository(),
         );
 
         let result = service.find_related(1, 3).await;

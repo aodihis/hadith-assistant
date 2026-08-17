@@ -1,5 +1,6 @@
 mod models;
 
 pub use models::{
-    Collection, Hadith, HadithSearch, Narrator, RetrievalQuery, RetrievalResult, RetrievedHadith,
+    Collection, Hadith, HadithSearch, Narrator, NarratorRef, RetrievalQuery, RetrievalResult,
+    RetrievedHadith,
 };

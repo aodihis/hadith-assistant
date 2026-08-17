@@ -55,6 +55,7 @@ mod tests {
     use crate::infrastructure::completion::{ChatCompleter, ChatMessage, CompletionOptions};
     use crate::infrastructure::embedding::Embedder;
     use crate::infrastructure::persistence::hadiths::HadithRepository;
+    use crate::infrastructure::persistence::narrators::NarratorRepository;
     use crate::infrastructure::vector::{EmbeddingPoint, VectorMatch, VectorStore};
 
     struct FakeEmbedder;
@@ -101,21 +102,26 @@ mod tests {
         }
     }
 
-    fn test_repository() -> HadithRepository {
+    fn test_repositories() -> (HadithRepository, NarratorRepository) {
         use sqlx::postgres::PgPoolOptions;
 
         let pool = PgPoolOptions::new()
             .connect_lazy("postgres://postgres:postgres@localhost/hadiths")
             .expect("test database URL should parse");
 
-        HadithRepository::new(pool)
+        (
+            HadithRepository::new(pool.clone()),
+            NarratorRepository::new(pool),
+        )
     }
 
     fn service_with_no_matches() -> QuestionService {
+        let (hadiths, narrators) = test_repositories();
         let retrieval = Arc::new(RetrievalService::new(
             Arc::new(FakeEmbedder),
             Arc::new(EmptyVectorStore),
-            test_repository(),
+            hadiths,
+            narrators,
         ));
         let answers = Arc::new(AnswerService::new(
             Arc::new(PanicsIfCalledCompleter),

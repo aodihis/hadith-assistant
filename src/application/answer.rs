@@ -214,6 +214,12 @@ mod tests {
             hadith_number: "1".to_owned(),
             arabic_text: "إنما الأعمال بالنيات".to_owned(),
             english_text: Some("Actions are but by intentions.".to_owned()),
+            arabic_grade: "صحيح".to_owned(),
+            english_grade: "Sahih".to_owned(),
+            narrator: Some(crate::domain::NarratorRef {
+                name: "Umar ibn al-Khattab".to_owned(),
+                role: "sahabi".to_owned(),
+            }),
             score: Some(0.9),
         }
     }

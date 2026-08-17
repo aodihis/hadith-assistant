@@ -49,6 +49,15 @@ pub struct RetrievalQuery {
     pub limit: i64,
 }
 
+/// The narrator a card attributes a narration to. Carried alongside the
+/// narration rather than folded into it, so the canonical record stays the
+/// single source for the text itself.
+#[derive(Debug, Clone, Serialize)]
+pub struct NarratorRef {
+    pub name: String,
+    pub role: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct RetrievedHadith {
     pub hadith_id: i64,
@@ -57,6 +66,11 @@ pub struct RetrievedHadith {
     pub hadith_number: String,
     pub arabic_text: String,
     pub english_text: Option<String>,
+    /// Grades are authoritative source metadata, carried verbatim from the
+    /// canonical record — never inferred, normalized, or re-characterized.
+    pub arabic_grade: String,
+    pub english_grade: String,
+    pub narrator: Option<NarratorRef>,
     pub score: Option<f64>,
 }
 
