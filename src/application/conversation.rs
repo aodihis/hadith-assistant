@@ -255,6 +255,7 @@ mod tests {
             Arc::new(NoopVectorStore),
             HadithRepository::new(pool.clone()),
             NarratorRepository::new(pool),
+            0.0,
         ));
 
         ConversationService::new(

@@ -20,6 +20,8 @@ pub struct RetrievalService {
     vector_store: Arc<dyn VectorStore>,
     hadiths: HadithRepository,
     narrators: NarratorRepository,
+    /// Matches below this cosine score are discarded as irrelevant.
+    min_score: f64,
 }
 
 impl RetrievalService {
@@ -28,12 +30,14 @@ impl RetrievalService {
         vector_store: Arc<dyn VectorStore>,
         hadiths: HadithRepository,
         narrators: NarratorRepository,
+        min_score: f64,
     ) -> Self {
         Self {
             embedder,
             vector_store,
             hadiths,
             narrators,
+            min_score,
         }
     }
 
@@ -73,6 +77,12 @@ impl RetrievalService {
             .vector_store
             .search(vector, query.collection.as_deref(), query.limit)
             .await?;
+
+        // Weak matches are dropped rather than shown. A narration that merely
+        // shares vocabulary with the question is worse than no answer here,
+        // because the model is instructed to ground its reply in whatever it
+        // is handed.
+        let matches = filter_by_score(matches, self.min_score);
 
         let results = self.resolve_matches(matches).await?;
 
@@ -192,6 +202,24 @@ fn assemble(
     results
 }
 
+fn filter_by_score(matches: Vec<VectorMatch>, min_score: f64) -> Vec<VectorMatch> {
+    let before = matches.len();
+    let kept: Vec<VectorMatch> = matches
+        .into_iter()
+        .filter(|candidate| f64::from(candidate.score) >= min_score)
+        .collect();
+
+    if kept.len() < before {
+        tracing::debug!(
+            dropped = before - kept.len(),
+            min_score,
+            "discarded retrieval matches below the relevance threshold"
+        );
+    }
+
+    kept
+}
+
 fn select_related_candidates(
     matches: Vec<VectorMatch>,
     exclude_hadith_id: i64,
@@ -278,7 +306,7 @@ mod tests {
         vector_store: Arc<dyn VectorStore>,
     ) -> RetrievalService {
         let (hadiths, narrators) = test_repositories();
-        RetrievalService::new(embedder, vector_store, hadiths, narrators)
+        RetrievalService::new(embedder, vector_store, hadiths, narrators, 0.0)
     }
 
     #[tokio::test]
@@ -437,6 +465,39 @@ mod tests {
 
     fn vector_match(hadith_id: i64, score: f32) -> VectorMatch {
         VectorMatch { hadith_id, score }
+    }
+
+    #[test]
+    fn matches_below_the_threshold_are_discarded() {
+        let matches = vec![
+            vector_match(1, 0.62),
+            vector_match(2, 0.51),
+            vector_match(3, 0.44),
+        ];
+
+        let kept = filter_by_score(matches, 0.5);
+
+        assert_eq!(
+            kept.iter().map(|m| m.hadith_id).collect::<Vec<_>>(),
+            vec![1, 2],
+            "a narration that merely shares vocabulary is worse than no answer"
+        );
+    }
+
+    #[test]
+    fn a_threshold_above_every_score_yields_nothing_rather_than_a_best_effort() {
+        // Deliberate: retrieval reports honestly that it found nothing relevant
+        // instead of handing the model its least-bad guess to ground an answer in.
+        let matches = vec![vector_match(1, 0.66), vector_match(2, 0.52)];
+
+        assert!(filter_by_score(matches, 0.7).is_empty());
+    }
+
+    #[test]
+    fn a_zero_threshold_keeps_everything() {
+        let matches = vec![vector_match(1, 0.2), vector_match(2, 0.01)];
+
+        assert_eq!(filter_by_score(matches, 0.0).len(), 2);
     }
 
     #[test]

@@ -54,6 +54,7 @@ impl AppServices {
         let hadith_repository = HadithRepository::new(pool.clone());
         let narrator_repository = NarratorRepository::new(pool.clone());
 
+        let vector_min_score = vector.min_score;
         let embedder: Arc<dyn Embedder> = Arc::new(OpenAiEmbedder::new(embedding));
         let vector_store: Arc<dyn VectorStore> = Arc::new(
             QdrantVectorStore::new(&vector.qdrant_url, vector.qdrant_collection)
@@ -87,6 +88,7 @@ impl AppServices {
             vector_store,
             hadith_repository,
             narrator_repository,
+            vector_min_score,
         ));
         let questions = Arc::new(QuestionService::new(retrieval.clone(), answers));
         let conversations = Arc::new(ConversationService::new(

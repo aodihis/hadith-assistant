@@ -71,6 +71,7 @@ async fn run(pool: PgPool, collection_name: String) -> Result<(), Box<dyn std::e
         Arc::new(vector_store),
         repository,
         narrators,
+        0.0,
     );
 
     let result = service

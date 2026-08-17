@@ -129,6 +129,7 @@ mod tests {
             Arc::new(EmptyVectorStore),
             hadiths,
             narrators,
+            0.0,
         ));
         let answers = Arc::new(AnswerService::new(
             Arc::new(PanicsIfCalledCompleter),
