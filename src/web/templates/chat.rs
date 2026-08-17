@@ -61,16 +61,14 @@ pub(crate) async fn chat_view() -> Result {
             <div class="chat-transcript" data-region="transcript" aria-live="polite"></div>
 
             <form class="chat-composer" data-region="composer">
-                <label class="visually-hidden">
-                    "Your question"
-                    <input
-                        id="chat-input"
-                        type="text"
-                        name="message"
-                        autocomplete="off"
-                        placeholder="Ask about a topic from the narrations…"
-                    >
-                </label>
+                <input
+                    id="chat-input"
+                    type="text"
+                    name="message"
+                    autocomplete="off"
+                    aria-label="Your question"
+                    placeholder="Ask about a topic from the narrations…"
+                >
                 <button class="button primary" type="submit" data-bind="send">"Ask"</button>
             </form>
 

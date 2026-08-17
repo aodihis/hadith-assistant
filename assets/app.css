@@ -540,12 +540,8 @@ footer {
   background: linear-gradient(180deg, rgba(239, 231, 214, 0) 0%, var(--sanad-paper) 30%);
 }
 
-.chat-composer label {
-  flex: 1;
-}
-
 .chat-composer input {
-  width: 100%;
+  flex: 1;
   padding: 0.85rem 1.1rem;
   border: 1px solid rgba(38, 34, 27, 0.2);
   border-radius: 999px;
@@ -556,18 +552,6 @@ footer {
 .chat-composer .button {
   border-radius: 999px;
   padding-inline: 1.4rem;
-}
-
-.visually-hidden {
-  position: relative;
-}
-
-.visually-hidden > *:first-child {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
 }
 
 .chat-backdrop {

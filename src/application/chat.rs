@@ -3,6 +3,7 @@ use crate::application::answer::parse_answer;
 use crate::domain::RetrievedHadith;
 use crate::error::AppError;
 use crate::infrastructure::completion::ChatMessage;
+use crate::text::to_plain_text;
 
 pub const CHAT_SYSTEM_PROMPT: &str = include_str!("../../prompts/chat_system.md");
 pub const COMPACTION_SYSTEM_PROMPT: &str = include_str!("../../prompts/compaction_system.md");
@@ -167,10 +168,15 @@ pub fn render_narrations(hadiths: &[RetrievedHadith]) -> String {
         if let Some(narrator) = &hadith.narrator {
             block.push_str(&format!("Narrated by: {}\n", narrator.name));
         }
+        // Stripped before the model sees it: source markup wastes prompt tokens
+        // and invites the model to echo tags back into an answer.
         if let Some(english_text) = &hadith.english_text {
-            block.push_str(&format!("English: {english_text}\n"));
+            block.push_str(&format!("English: {}\n", to_plain_text(english_text)));
         }
-        block.push_str(&format!("Arabic: {}\n\n", hadith.arabic_text));
+        block.push_str(&format!(
+            "Arabic: {}\n\n",
+            to_plain_text(&hadith.arabic_text)
+        ));
     }
 
     block

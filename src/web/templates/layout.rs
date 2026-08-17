@@ -26,7 +26,6 @@ pub(crate) async fn page_shell(styles: Asset, child: View) -> Result {
                     <nav aria-label="Primary navigation">
                         <a href="/">"Home"</a>
                         <a href="/hadiths">"Browse Hadiths"</a>
-                        <a href="/search">"Search"</a>
                         <a href="/chat">"Chat"</a>
                         <a href="/api/health">"API health"</a>
                     </nav>

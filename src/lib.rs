@@ -4,5 +4,6 @@ pub mod domain;
 pub mod error;
 pub mod infrastructure;
 pub mod ingestion;
+pub mod text;
 pub mod transliteration;
 pub mod web;

@@ -51,6 +51,30 @@
     return node;
   }
 
+  // About half the source records carry HTML in their text. DOMParser decodes
+  // entities and drops tags without executing anything, and block elements
+  // become line breaks so sentences the markup separated stay separated.
+  function plainText(raw) {
+    if (!raw) return "";
+    if (!raw.includes("<") && !raw.includes("&")) return raw.trim();
+
+    const doc = new DOMParser().parseFromString(raw, "text/html");
+    for (const node of doc.body.querySelectorAll("p, br, div, li, tr, h1, h2, h3")) {
+      node.before("\n");
+    }
+    return doc.body.textContent
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  function paragraphsInto(parent, text) {
+    for (const paragraph of plainText(text).split("\n")) {
+      if (paragraph) parent.append(el("p", null, paragraph));
+    }
+  }
+
   function loadBookmarks() {
     try {
       const raw = JSON.parse(localStorage.getItem(BOOKMARK_KEY) || "null");
@@ -119,12 +143,16 @@
     if (grade) meta.append(el("span", "chat-grade", grade));
     card.append(meta);
 
-    const arabic = el("p", "arabic", hadith.arabic_text);
+    const arabic = el("p", "arabic", plainText(hadith.arabic_text));
     arabic.lang = "ar";
     arabic.dir = "rtl";
     card.append(arabic);
 
-    if (hadith.english_text) card.append(el("p", "translation", hadith.english_text));
+    if (hadith.english_text) {
+      const translation = el("div", "translation");
+      paragraphsInto(translation, hadith.english_text);
+      card.append(translation);
+    }
 
     const foot = el("div", "chat-card-foot");
     if (hadith.narrator) {
@@ -348,11 +376,15 @@
     const grade = gradeLabel(hadith);
     if (grade) head.append(el("p", "chat-grade", grade));
 
-    const arabic = el("p", "arabic", hadith.arabic_text);
+    const arabic = el("p", "arabic", plainText(hadith.arabic_text));
     arabic.lang = "ar";
     arabic.dir = "rtl";
     head.append(arabic);
-    if (hadith.english_text) head.append(el("p", "translation", hadith.english_text));
+    if (hadith.english_text) {
+      const translation = el("div", "translation");
+      paragraphsInto(translation, hadith.english_text);
+      head.append(translation);
+    }
     if (hadith.narrator) head.append(el("p", "chat-muted", `Narrated by ${hadith.narrator.name}`));
 
     drawerBody.replaceChildren(head);

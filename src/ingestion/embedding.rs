@@ -2,6 +2,7 @@ use crate::domain::Hadith;
 use crate::error::AppError;
 use crate::infrastructure::embedding::Embedder;
 use crate::infrastructure::vector::{EmbeddingPoint, VectorStore};
+use crate::text::to_plain_text;
 
 const EMBEDDING_BATCH_SIZE: usize = 96;
 
@@ -44,12 +45,20 @@ pub async fn embed_hadiths(
     Ok(embedded_count)
 }
 
+/// Builds the text a hadith is embedded from.
+///
+/// Source markup is stripped here rather than at import: the canonical record
+/// keeps its original text, while the vector — derived data — is built from
+/// clean prose. Embedding `<p>` tags spends tokens on markup and pushes every
+/// record toward a shared, meaningless direction in the vector space.
 fn hadith_embedding_text(hadith: &Hadith) -> String {
+    let arabic = to_plain_text(&hadith.arabic_text);
+
     match &hadith.english_text {
         Some(english_text) if !english_text.trim().is_empty() => {
-            format!("{}\n{}", hadith.arabic_text, english_text)
+            format!("{}\n{}", arabic, to_plain_text(english_text))
         }
-        _ => hadith.arabic_text.clone(),
+        _ => arabic,
     }
 }
 

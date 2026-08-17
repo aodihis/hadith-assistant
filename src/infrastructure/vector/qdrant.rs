@@ -79,6 +79,21 @@ impl VectorStore for QdrantVectorStore {
             return Ok(HashSet::new());
         }
 
+        // The lookup runs before anything is written, so on a first run — or
+        // after the collection is dropped and rebuilt — it does not exist yet.
+        // That means nothing is indexed, not that the query failed.
+        let exists = self
+            .client
+            .collection_exists(self.collection_name.clone())
+            .await
+            .map_err(|error| {
+                AppError::Internal(format!("qdrant collection_exists failed: {error}"))
+            })?;
+
+        if !exists {
+            return Ok(HashSet::new());
+        }
+
         // Points are written with the hadith id as a numeric point id (see
         // to_point_struct), so the lookup key must match that representation.
         let ids: Vec<PointId> = hadith_ids

@@ -4,6 +4,7 @@ use topcoat::{
 };
 
 use crate::domain::Hadith;
+use crate::text::to_plain_text;
 
 #[component]
 pub(crate) async fn hadith_list_view(
@@ -97,10 +98,12 @@ pub(crate) async fn hadith_list_view(
                                 </a>
                             </div>
                             <p class="arabic" lang="ar" dir="rtl">
-                                (hadith.arabic_text)
+                                (to_plain_text(&hadith.arabic_text))
                             </p>
                             if let Some(english_text) = hadith.english_text {
-                                <p class="translation">(english_text)</p>
+                                // The stored record keeps its source markup;
+                                // only the rendering is cleaned.
+                                <p class="translation">(to_plain_text(&english_text))</p>
                             }
                             <div class="grades">
                                 <span>

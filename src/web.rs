@@ -1,7 +1,6 @@
 mod api;
 mod chat;
 mod hadiths;
-mod search;
 mod templates;
 
 use topcoat::{
