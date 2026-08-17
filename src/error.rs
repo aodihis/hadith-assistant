@@ -10,6 +10,15 @@ pub enum AppError {
     Conflict(String),
     #[error("not implemented: {0}")]
     NotImplemented(String),
+    /// The caller's chat session is unknown or past its lifetime. Distinct from
+    /// a validation failure so a client can tell "start a new chat" apart from
+    /// "fix your request".
+    #[error("session expired: {0}")]
+    SessionExpired(String),
+    /// The caller has exhausted its request budget. Chat turns trigger paid
+    /// provider calls, so this is a cost control, not just a fairness one.
+    #[error("too many requests: {0}")]
+    TooManyRequests(String),
     #[error("database error")]
     Database(sqlx::Error),
     #[error("internal error: {0}")]
@@ -23,6 +32,8 @@ impl AppError {
             Self::NotFound(_) => "not_found",
             Self::Conflict(_) => "conflict",
             Self::NotImplemented(_) => "not_implemented",
+            Self::SessionExpired(_) => "session_expired",
+            Self::TooManyRequests(_) => "too_many_requests",
             Self::Database(_) => "database_error",
             Self::Internal(_) => "internal_error",
         }

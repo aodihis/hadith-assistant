@@ -33,8 +33,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.embedding.clone(),
         config.vector.clone(),
         config.chat.clone(),
+        session_config(),
     ))?;
     topcoat::start(router).await?;
 
     Ok(())
+}
+
+/// Builds the chat session policy.
+///
+/// `SESSION_SECRET` is optional on purpose: it holds no user data, so the only
+/// consequence of leaving it unset is that tokens issued before a restart stop
+/// being honoured. That is a visible, self-healing annoyance ("start a new
+/// chat") rather than a security hole, so it warns instead of refusing to boot.
+fn session_config() -> hadith_assistant::application::SessionConfig {
+    use hadith_assistant::application::SessionConfig;
+
+    let secret = match std::env::var("SESSION_SECRET") {
+        Ok(secret) if !secret.trim().is_empty() => secret.into_bytes(),
+        _ => {
+            tracing::warn!("SESSION_SECRET is not set; chat sessions will not survive a restart");
+            format!("ephemeral-{:?}", std::time::SystemTime::now()).into_bytes()
+        }
+    };
+
+    SessionConfig {
+        secret,
+        ..SessionConfig::default()
+    }
 }

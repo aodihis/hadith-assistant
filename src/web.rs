@@ -74,6 +74,7 @@ mod tests {
             crate::config::EmbeddingConfig::default(),
             crate::config::VectorConfig::default(),
             crate::config::ChatConfig::default(),
+            crate::application::SessionConfig::default(),
         ));
     }
 }

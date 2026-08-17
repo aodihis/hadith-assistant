@@ -3,6 +3,7 @@ mod collections;
 mod hadiths;
 mod question;
 mod retrieval;
+mod session;
 
 use std::sync::Arc;
 
@@ -11,6 +12,7 @@ pub use collections::CollectionService;
 pub use hadiths::HadithService;
 pub use question::{AnsweredQuestion, QuestionService};
 pub use retrieval::RetrievalService;
+pub use session::{SessionConfig, SessionId, SessionService};
 use sqlx::PgPool;
 
 use crate::config::{ChatConfig, EmbeddingConfig, VectorConfig};
@@ -28,6 +30,7 @@ pub struct AppServices {
     /// Generation is only reachable through `questions`, which guarantees an
     /// answer never travels without the records it was grounded in.
     pub questions: Arc<QuestionService>,
+    pub sessions: Arc<SessionService>,
 }
 
 impl AppServices {
@@ -36,6 +39,7 @@ impl AppServices {
         embedding: EmbeddingConfig,
         vector: VectorConfig,
         chat: ChatConfig,
+        session: SessionConfig,
     ) -> Self {
         let hadith_repository = HadithRepository::new(pool.clone());
         let narrator_repository = NarratorRepository::new(pool.clone());
@@ -68,6 +72,7 @@ impl AppServices {
             hadiths: Arc::new(HadithService::new(pool)),
             retrieval,
             questions,
+            sessions: Arc::new(SessionService::new(session)),
         }
     }
 }

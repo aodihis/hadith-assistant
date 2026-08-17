@@ -65,6 +65,11 @@ fn status_for(error: &AppError) -> StatusCode {
         AppError::NotFound(_) => StatusCode::NOT_FOUND,
         AppError::Conflict(_) => StatusCode::CONFLICT,
         AppError::NotImplemented(_) => StatusCode::NOT_IMPLEMENTED,
+        // 440 is not a registered status; 401 is the closest standard fit for
+        // "your session is no longer valid, get a new one". The stable
+        // `session_expired` code in the body is what clients should branch on.
+        AppError::SessionExpired(_) => StatusCode::UNAUTHORIZED,
+        AppError::TooManyRequests(_) => StatusCode::TOO_MANY_REQUESTS,
         AppError::Database(_) | AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }
