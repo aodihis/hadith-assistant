@@ -1,4 +1,5 @@
 mod answer;
+mod chat;
 mod collections;
 mod hadiths;
 mod question;
@@ -8,6 +9,7 @@ mod session;
 use std::sync::Arc;
 
 pub use answer::{Answer, AnswerService};
+pub use chat::{ChatReply, RefusalReason, ReplyAssembler, StreamEvent, parse_chat_reply};
 pub use collections::CollectionService;
 pub use hadiths::HadithService;
 pub use question::{AnsweredQuestion, QuestionService};
