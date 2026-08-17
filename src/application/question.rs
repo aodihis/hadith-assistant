@@ -52,7 +52,7 @@ mod tests {
     use async_trait::async_trait;
 
     use super::*;
-    use crate::infrastructure::completion::ChatCompleter;
+    use crate::infrastructure::completion::{ChatCompleter, ChatMessage, CompletionOptions};
     use crate::infrastructure::embedding::Embedder;
     use crate::infrastructure::persistence::hadiths::HadithRepository;
     use crate::infrastructure::vector::{EmbeddingPoint, VectorMatch, VectorStore};
@@ -92,10 +92,10 @@ mod tests {
 
     #[async_trait]
     impl ChatCompleter for PanicsIfCalledCompleter {
-        async fn complete(
+        async fn complete_messages(
             &self,
-            _system_prompt: &str,
-            _user_prompt: &str,
+            _messages: &[ChatMessage],
+            _options: CompletionOptions,
         ) -> Result<String, AppError> {
             panic!("completer should not be called");
         }
@@ -117,7 +117,11 @@ mod tests {
             Arc::new(EmptyVectorStore),
             test_repository(),
         ));
-        let answers = Arc::new(AnswerService::new(Arc::new(PanicsIfCalledCompleter), true));
+        let answers = Arc::new(AnswerService::new(
+            Arc::new(PanicsIfCalledCompleter),
+            true,
+            CompletionOptions::new(0.3, 400),
+        ));
 
         QuestionService::new(retrieval, answers)
     }

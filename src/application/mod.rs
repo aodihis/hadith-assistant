@@ -14,7 +14,7 @@ pub use retrieval::RetrievalService;
 use sqlx::PgPool;
 
 use crate::config::{ChatConfig, EmbeddingConfig, VectorConfig};
-use crate::infrastructure::completion::{ChatCompleter, OpenAiChatClient};
+use crate::infrastructure::completion::{ChatCompleter, CompletionOptions, OpenAiChatClient};
 use crate::infrastructure::embedding::{Embedder, OpenAiEmbedder};
 use crate::infrastructure::persistence::hadiths::HadithRepository;
 use crate::infrastructure::vector::{QdrantVectorStore, VectorStore};
@@ -45,8 +45,13 @@ impl AppServices {
         );
 
         let has_chat_api_key = chat.api_key.is_some();
+        let answer_options = CompletionOptions::new(chat.temperature, chat.max_tokens);
         let completer: Arc<dyn ChatCompleter> = Arc::new(OpenAiChatClient::new(chat));
-        let answers = Arc::new(AnswerService::new(completer, has_chat_api_key));
+        let answers = Arc::new(AnswerService::new(
+            completer,
+            has_chat_api_key,
+            answer_options,
+        ));
 
         let retrieval = Arc::new(RetrievalService::new(
             embedder,
