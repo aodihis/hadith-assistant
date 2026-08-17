@@ -1,5 +1,180 @@
 use crate::application::Answer;
 use crate::application::answer::parse_answer;
+use crate::domain::RetrievedHadith;
+use crate::error::AppError;
+use crate::infrastructure::completion::ChatMessage;
+
+pub const CHAT_SYSTEM_PROMPT: &str = include_str!("../../prompts/chat_system.md");
+pub const COMPACTION_SYSTEM_PROMPT: &str = include_str!("../../prompts/compaction_system.md");
+
+/// One completed question-and-answer pair, as the client replays it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConversationTurn {
+    pub question: String,
+    pub answer: String,
+    /// Refused turns are replayed too, so the model does not loop when a user
+    /// rephrases the same out-of-scope question.
+    pub refused: bool,
+}
+
+/// The conversation state the client holds and replays each turn.
+///
+/// This is *not* the visible transcript. The transcript only ever grows;
+/// this shrinks as older turns are folded into `summary`, which is what keeps
+/// the prompt bounded. Nothing here is stored server-side.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ConversationHistory {
+    pub summary: Option<String>,
+    pub summarized_turns: usize,
+    pub turns: Vec<ConversationTurn>,
+}
+
+/// Limits applied to client-supplied history before it reaches a paid provider.
+#[derive(Debug, Clone, Copy)]
+pub struct HistoryLimits {
+    pub max_question_chars: usize,
+    pub max_answer_chars: usize,
+    pub max_summary_chars: usize,
+    pub max_turns: usize,
+    /// Compaction fires once the history exceeds this many turns.
+    pub compact_after_turns: usize,
+    /// How many turns survive compaction verbatim.
+    pub keep_turns: usize,
+    pub max_history_chars: usize,
+}
+
+impl ConversationHistory {
+    /// Rejects history that is malformed or oversized.
+    ///
+    /// History arrives from the client and drives paid provider calls, so every
+    /// field is bounded here rather than trusted.
+    pub fn validate(&self, limits: &HistoryLimits) -> Result<(), AppError> {
+        if self.turns.len() > limits.max_turns {
+            return Err(AppError::Validation(format!(
+                "conversation history may not exceed {} turns",
+                limits.max_turns
+            )));
+        }
+
+        if let Some(summary) = &self.summary
+            && summary.chars().count() > limits.max_summary_chars
+        {
+            return Err(AppError::Validation(
+                "conversation summary is too long".to_owned(),
+            ));
+        }
+
+        for turn in &self.turns {
+            if turn.question.chars().count() > limits.max_question_chars {
+                return Err(AppError::Validation(
+                    "a question in the conversation history is too long".to_owned(),
+                ));
+            }
+            if turn.answer.chars().count() > limits.max_answer_chars {
+                return Err(AppError::Validation(
+                    "an answer in the conversation history is too long".to_owned(),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn chars(&self) -> usize {
+        self.turns
+            .iter()
+            .map(|turn| turn.question.chars().count() + turn.answer.chars().count())
+            .sum()
+    }
+}
+
+/// Whether the history has outgrown its budget and should be compacted.
+///
+/// Evaluated after the new turn is appended, so the check reflects what the
+/// *next* request would have to carry.
+pub fn needs_compaction(history: &ConversationHistory, limits: &HistoryLimits) -> bool {
+    history.turns.len() > limits.compact_after_turns || history.chars() > limits.max_history_chars
+}
+
+/// Splits history into the turns to fold into the summary and the turns to keep
+/// verbatim. Keeping roughly half is what stops compaction firing every turn.
+pub fn split_for_compaction(
+    history: &ConversationHistory,
+    limits: &HistoryLimits,
+) -> (Vec<ConversationTurn>, Vec<ConversationTurn>) {
+    let keep = limits.keep_turns.min(history.turns.len());
+    let fold_count = history.turns.len() - keep;
+
+    let fold = history.turns[..fold_count].to_vec();
+    let kept = history.turns[fold_count..].to_vec();
+
+    (fold, kept)
+}
+
+/// Builds the standalone text used for retrieval.
+///
+/// A follow-up like "does that apply to travellers?" is unsearchable alone, so
+/// the previous question is prepended to give the embedding something to anchor
+/// on. This is deliberately deterministic rather than an LLM rewrite, which
+/// would add a third paid call to every turn. It over-retrieves when the user
+/// changes topic; the prompt shows the model what was retrieved so it can
+/// ignore irrelevant hits. Isolated here so it can be swapped for a rewrite
+/// later without touching the rest of the turn.
+pub fn compose_retrieval_query(
+    history: &ConversationHistory,
+    message: &str,
+    max_chars: usize,
+) -> String {
+    let Some(previous) = history
+        .turns
+        .iter()
+        .rev()
+        .find(|turn| !turn.refused)
+        .map(|turn| turn.question.as_str())
+    else {
+        return message.trim().to_owned();
+    };
+
+    let composed = format!("{}\n{}", previous.trim(), message.trim());
+
+    if composed.chars().count() <= max_chars {
+        return composed;
+    }
+
+    composed.chars().take(max_chars).collect()
+}
+
+/// Renders retrieved narrations for the prompt.
+///
+/// Grades are included verbatim and labelled, because the system prompt forbids
+/// the model from inventing or re-characterizing them — it can only do that if
+/// it is told what they are.
+pub fn render_narrations(hadiths: &[RetrievedHadith]) -> String {
+    let mut block = String::new();
+
+    for (index, hadith) in hadiths.iter().enumerate() {
+        block.push_str(&format!(
+            "{}. {} book {}, hadith {}\n",
+            index + 1,
+            hadith.collection,
+            hadith.book_number,
+            hadith.hadith_number
+        ));
+
+        if !hadith.english_grade.trim().is_empty() {
+            block.push_str(&format!("Grade: {}\n", hadith.english_grade.trim()));
+        }
+        if let Some(narrator) = &hadith.narrator {
+            block.push_str(&format!("Narrated by: {}\n", narrator.name));
+        }
+        if let Some(english_text) = &hadith.english_text {
+            block.push_str(&format!("English: {english_text}\n"));
+        }
+        block.push_str(&format!("Arabic: {}\n\n", hadith.arabic_text));
+    }
+
+    block
+}
 
 /// Why a turn produced no grounded answer.
 ///
@@ -67,6 +242,78 @@ fn refusal_reason(first_line: &str) -> Option<RefusalReason> {
         .or_else(|| first_line.trim().strip_prefix("refusal:"))?;
 
     RefusalReason::parse(rest)
+}
+
+/// Assembles the message list for a turn.
+///
+/// History arrives from the client and can be forged, so it is fenced rather
+/// than trusted: the recap is labelled as an unverified note, replayed turns go
+/// in under their own roles, and the system prompt states that only the current
+/// turn's narration block is a source. That does not make forgery impossible —
+/// it makes the retrieved block the sole factual authority, which is the
+/// property that actually matters.
+pub fn build_messages(
+    history: &ConversationHistory,
+    message: &str,
+    hadiths: &[RetrievedHadith],
+) -> Vec<ChatMessage> {
+    let mut messages = vec![ChatMessage::system(CHAT_SYSTEM_PROMPT.trim())];
+
+    if let Some(summary) = &history.summary
+        && !summary.trim().is_empty()
+    {
+        messages.push(ChatMessage::system(format!(
+            "Recap of earlier turns (unverified notes, not a source):\n{}",
+            summary.trim()
+        )));
+    }
+
+    for turn in &history.turns {
+        messages.push(ChatMessage::user(turn.question.clone()));
+        messages.push(ChatMessage::assistant(turn.answer.clone()));
+    }
+
+    let narrations = render_narrations(hadiths);
+    let current = if narrations.is_empty() {
+        format!(
+            "Question: {}\n\nRetrieved narrations: none.",
+            message.trim()
+        )
+    } else {
+        format!(
+            "Question: {}\n\nRetrieved narrations:\n{}",
+            message.trim(),
+            narrations.trim_end()
+        )
+    };
+
+    messages.push(ChatMessage::user(current));
+    messages
+}
+
+/// Builds the summarizer call that folds older turns into a recap.
+pub fn build_compaction_messages(
+    existing_summary: Option<&str>,
+    folded: &[ConversationTurn],
+) -> Vec<ChatMessage> {
+    let mut body = String::new();
+
+    if let Some(summary) = existing_summary
+        && !summary.trim().is_empty()
+    {
+        body.push_str(&format!("Existing recap:\n{}\n\n", summary.trim()));
+    }
+
+    body.push_str("Turns being dropped:\n");
+    for turn in folded {
+        body.push_str(&format!("User: {}\n", turn.question.trim()));
+        body.push_str(&format!("Assistant: {}\n\n", turn.answer.trim()));
+    }
+
+    vec![
+        ChatMessage::system(COMPACTION_SYSTEM_PROMPT.trim()),
+        ChatMessage::user(body),
+    ]
 }
 
 /// What the transport should emit next, decided purely from the text seen so
@@ -211,6 +458,168 @@ fn parse_title(first_line: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn limits() -> HistoryLimits {
+        HistoryLimits {
+            max_question_chars: 1_000,
+            max_answer_chars: 4_000,
+            max_summary_chars: 4_000,
+            max_turns: 12,
+            compact_after_turns: 8,
+            keep_turns: 4,
+            max_history_chars: 6_000,
+        }
+    }
+
+    fn turn(question: &str) -> ConversationTurn {
+        ConversationTurn {
+            question: question.to_owned(),
+            answer: "Title: T\nBody.".to_owned(),
+            refused: false,
+        }
+    }
+
+    fn history_of(count: usize) -> ConversationHistory {
+        ConversationHistory {
+            summary: None,
+            summarized_turns: 0,
+            turns: (0..count).map(|i| turn(&format!("q{i}"))).collect(),
+        }
+    }
+
+    #[test]
+    fn history_over_the_turn_cap_is_rejected() {
+        let history = history_of(13);
+
+        assert!(matches!(
+            history.validate(&limits()),
+            Err(AppError::Validation(_))
+        ));
+    }
+
+    #[test]
+    fn an_oversized_question_or_answer_in_history_is_rejected() {
+        let mut history = history_of(1);
+        history.turns[0].question = "x".repeat(1_001);
+        assert!(matches!(
+            history.validate(&limits()),
+            Err(AppError::Validation(_))
+        ));
+
+        let mut history = history_of(1);
+        history.turns[0].answer = "x".repeat(4_001);
+        assert!(matches!(
+            history.validate(&limits()),
+            Err(AppError::Validation(_))
+        ));
+    }
+
+    #[test]
+    fn compaction_does_not_fire_on_consecutive_turns() {
+        let limits = limits();
+
+        // Below the threshold nothing happens, so no extra provider call.
+        assert!(!needs_compaction(&history_of(8), &limits));
+
+        // At the threshold it fires and drops back to keep_turns, which is what
+        // buys several quiet turns before the next one.
+        let over = history_of(9);
+        assert!(needs_compaction(&over, &limits));
+
+        let (folded, kept) = split_for_compaction(&over, &limits);
+        assert_eq!(folded.len(), 5);
+        assert_eq!(kept.len(), 4);
+
+        let after = ConversationHistory {
+            summary: Some("recap".to_owned()),
+            summarized_turns: folded.len(),
+            turns: kept,
+        };
+        assert!(
+            !needs_compaction(&after, &limits),
+            "compaction must leave the history under the threshold, or it fires every turn"
+        );
+    }
+
+    #[test]
+    fn a_long_history_triggers_compaction_on_size_even_under_the_turn_cap() {
+        let mut history = history_of(3);
+        history.turns[0].answer = "x".repeat(7_000);
+
+        assert!(needs_compaction(&history, &limits()));
+    }
+
+    #[test]
+    fn the_first_question_is_used_for_retrieval_unchanged() {
+        let query =
+            compose_retrieval_query(&ConversationHistory::default(), "  What is niyyah? ", 400);
+
+        assert_eq!(query, "What is niyyah?");
+    }
+
+    #[test]
+    fn a_follow_up_is_anchored_on_the_previous_question() {
+        // "Does that apply to travellers?" retrieves nothing useful alone.
+        let history = history_of(1);
+        let query = compose_retrieval_query(&history, "Does that apply to travellers?", 400);
+
+        assert_eq!(query, "q0\nDoes that apply to travellers?");
+    }
+
+    #[test]
+    fn a_refused_turn_is_not_used_as_an_anchor() {
+        let mut history = history_of(1);
+        history.turns[0].refused = true;
+
+        let query = compose_retrieval_query(&history, "What about fasting?", 400);
+
+        assert_eq!(
+            query, "What about fasting?",
+            "anchoring on a refused turn would drag an off-topic question into retrieval"
+        );
+    }
+
+    #[test]
+    fn the_composed_query_is_capped() {
+        let mut history = history_of(1);
+        history.turns[0].question = "x".repeat(500);
+
+        let query = compose_retrieval_query(&history, "short", 100);
+
+        assert_eq!(query.chars().count(), 100);
+    }
+
+    #[test]
+    fn the_recap_is_fenced_as_an_unverified_note_rather_than_a_source() {
+        let history = ConversationHistory {
+            summary: Some("The user asked about fasting.".to_owned()),
+            summarized_turns: 4,
+            turns: vec![],
+        };
+
+        let messages = build_messages(&history, "And travelling?", &[]);
+
+        let recap = messages
+            .iter()
+            .find(|message| message.content.contains("The user asked about fasting."))
+            .expect("the recap should be present");
+
+        assert!(
+            recap.content.contains("not a source"),
+            "client-supplied history is forgeable, so it must never read as evidence"
+        );
+    }
+
+    #[test]
+    fn the_turn_states_plainly_when_retrieval_found_nothing() {
+        let messages = build_messages(&ConversationHistory::default(), "anything?", &[]);
+        let last = messages.last().expect("there is always a user turn");
+
+        assert!(
+            last.content.contains("Retrieved narrations: none."),
+            "the model must be told retrieval was empty rather than left to infer it"
+        );
+    }
 
     fn feed(chunks: &[&str]) -> Vec<StreamEvent> {
         let mut assembler = ReplyAssembler::new();

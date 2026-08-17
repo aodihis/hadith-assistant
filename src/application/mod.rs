@@ -9,7 +9,12 @@ mod session;
 use std::sync::Arc;
 
 pub use answer::{Answer, AnswerService};
-pub use chat::{ChatReply, RefusalReason, ReplyAssembler, StreamEvent, parse_chat_reply};
+pub use chat::{
+    CHAT_SYSTEM_PROMPT, COMPACTION_SYSTEM_PROMPT, ChatReply, ConversationHistory, ConversationTurn,
+    HistoryLimits, RefusalReason, ReplyAssembler, StreamEvent, build_compaction_messages,
+    build_messages, compose_retrieval_query, needs_compaction, parse_chat_reply, render_narrations,
+    split_for_compaction,
+};
 pub use collections::CollectionService;
 pub use hadiths::HadithService;
 pub use question::{AnsweredQuestion, QuestionService};
