@@ -85,6 +85,13 @@ impl CompletionOptions {
     }
 }
 
+/// A chunk of a streamed completion.
+pub type CompletionChunk = Result<String, AppError>;
+
+/// A stream of text deltas, in order.
+pub type CompletionStream =
+    std::pin::Pin<Box<dyn futures_util::Stream<Item = CompletionChunk> + Send>>;
+
 #[async_trait]
 pub trait ChatCompleter: Send + Sync {
     async fn complete_messages(
@@ -92,6 +99,22 @@ pub trait ChatCompleter: Send + Sync {
         messages: &[ChatMessage],
         options: CompletionOptions,
     ) -> Result<String, AppError>;
+
+    /// Streams a completion as it is generated.
+    ///
+    /// Defaults to running the non-streaming call and yielding it as one chunk,
+    /// so implementations that cannot stream — and every test fake — stay
+    /// correct without extra code. Callers must not assume more than one chunk.
+    async fn stream_messages(
+        &self,
+        messages: &[ChatMessage],
+        options: CompletionOptions,
+    ) -> Result<CompletionStream, AppError> {
+        let whole = self.complete_messages(messages, options).await?;
+        Ok(Box::pin(futures_util::stream::once(
+            async move { Ok(whole) },
+        )))
+    }
 
     /// Convenience for the single-shot case. Provided rather than required, so
     /// implementors only ever write `complete_messages`.

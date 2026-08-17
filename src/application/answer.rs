@@ -61,27 +61,14 @@ impl AnswerService {
     }
 }
 
+/// Prompts live in `prompts/*.md` so they can be read and edited as prose
+/// rather than hunted for inside string literals. `include_str!` keeps them
+/// compiled into the binary, so deployment stays a single artifact — editing a
+/// prompt does require a rebuild.
+const ANSWER_SYSTEM_PROMPT: &str = include_str!("../../prompts/answer_system.md");
+
 fn build_system_prompt() -> String {
-    "You are a study companion summarizing hadith narrations for a Muslim \
-     asking a sincere question. You will be given a question and a numbered \
-     list of hadiths retrieved for it. Follow these rules strictly:\n\
-     \n\
-     1. Use ONLY the hadiths provided below. Never introduce hadiths, \
-        narrations, or facts from outside this list.\n\
-     2. Never issue a fiqh ruling (halal/haram, obligatory/forbidden) or \
-        claim certainty on matters of Islamic law. Stay descriptive \
-        (\"these narrations address...\", \"the Prophet is reported to have \
-        said...\") rather than prescriptive (\"you must...\", \"it is \
-        obligatory to...\").\n\
-     3. If the provided hadiths do not clearly address the question, say so \
-        plainly rather than stretching them to fit.\n\
-     4. Respond in English, in exactly this shape, with nothing before the \
-        first line and nothing after the final paragraph:\n\
-     \n\
-     Title: <a short, neutral title for this topic, under 8 words>\n\
-     <one or two short paragraphs summarizing what the provided hadiths say, \
-     in plain prose>"
-        .to_owned()
+    ANSWER_SYSTEM_PROMPT.trim().to_owned()
 }
 
 fn build_user_prompt(query: &str, hadiths: &[RetrievedHadith]) -> String {
