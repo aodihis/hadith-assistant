@@ -1,4 +1,5 @@
 mod api;
+mod chat;
 mod hadiths;
 mod search;
 mod templates;
@@ -14,6 +15,9 @@ use crate::application::AppServices;
 use templates::{home::home_view, layout::page_shell};
 
 const STYLES: Asset = asset!("assets/app.css");
+/// Referenced from the chat view so the bundler keeps it; an unused Asset
+/// const is optimized out and vanishes from the bundle.
+pub(crate) const CHAT_SCRIPT: Asset = asset!("assets/chat.js");
 
 pub fn router(services: AppServices) -> std::io::Result<Router> {
     Ok(router_with_assets(services, AssetBundle::load()?))
