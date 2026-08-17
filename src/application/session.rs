@@ -35,7 +35,10 @@ impl Default for SessionConfig {
             secret: Vec::new(),
             ttl: Duration::from_secs(12 * 60 * 60),
             max_turns: 120,
-            burst: 8,
+            // Generous enough that a real conversation never trips it — a user
+            // asking quick follow-ups is normal. The lifetime cap above is the
+            // actual cost control; this only blunts scripted hammering.
+            burst: 15,
             refill_window: Duration::from_secs(60),
             max_tracked: 10_000,
         }
