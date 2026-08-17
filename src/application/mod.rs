@@ -1,6 +1,7 @@
 mod answer;
 mod chat;
 mod collections;
+mod conversation;
 mod hadiths;
 mod question;
 mod retrieval;
@@ -16,6 +17,7 @@ pub use chat::{
     split_for_compaction,
 };
 pub use collections::CollectionService;
+pub use conversation::{ConversationConfig, ConversationService, PreparedTurn};
 pub use hadiths::HadithService;
 pub use question::{AnsweredQuestion, QuestionService};
 pub use retrieval::RetrievalService;
