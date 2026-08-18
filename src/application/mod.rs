@@ -13,7 +13,7 @@ pub use answer::{Answer, AnswerService};
 pub use chat::{
     CHAT_SYSTEM_PROMPT, COMPACTION_SYSTEM_PROMPT, ChatReply, ConversationHistory, ConversationTurn,
     HistoryLimits, RefusalReason, ReplyAssembler, StreamEvent, build_compaction_messages,
-    build_messages, compose_retrieval_query, needs_compaction, parse_chat_reply, render_narrations,
+    build_messages, compose_retrieval_query, needs_compaction, render_narrations,
     split_for_compaction,
 };
 pub use collections::CollectionService;

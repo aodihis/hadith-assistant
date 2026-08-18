@@ -13,7 +13,6 @@ use topcoat::{
 
 use crate::application::{
     AppServices, ConversationHistory, ConversationTurn, ReplyAssembler, StreamEvent,
-    parse_chat_reply,
 };
 use crate::domain::RetrievedHadith;
 use crate::error::AppError;
@@ -169,7 +168,6 @@ async fn chat(cx: &Cx, Json(request): Json<ChatRequest>) -> Result<Sse<ChatEvent
 
         let mut assembler = ReplyAssembler::new();
         let mut citations_sent = false;
-        let mut raw = String::new();
         let mut failed = None;
 
         while let Some(chunk) = deltas.next().await {
@@ -180,7 +178,6 @@ async fn chat(cx: &Cx, Json(request): Json<ChatRequest>) -> Result<Sse<ChatEvent
                     break;
                 }
             };
-            raw.push_str(&chunk);
 
             for event in assembler.push(&chunk) {
                 for out in render(event, &prepared.citations, &mut citations_sent) {
@@ -189,21 +186,23 @@ async fn chat(cx: &Cx, Json(request): Json<ChatRequest>) -> Result<Sse<ChatEvent
             }
         }
 
-        for event in assembler.finish() {
+        // The assembler classified every byte on the way past, so the reply it
+        // returns is exactly what was streamed. Re-parsing the raw text here
+        // instead is what used to fail turns the reader had already read in
+        // full — and, because no `memory` event followed, silently desynchronise
+        // the client's history.
+        let (trailing, reply) = assembler.finish();
+        for event in trailing {
             for out in render(event, &prepared.citations, &mut citations_sent) {
                 yield Ok(out);
             }
         }
 
-        let Some(reply) = parse_chat_reply(&raw) else {
-            tracing::warn!(
-                raw_len = raw.len(),
-                raw_prefix = %raw.chars().take(80).collect::<String>().escape_debug(),
-                "chat reply did not match either expected shape"
-            );
+        let Some(reply) = reply else {
             let error = failed.unwrap_or_else(|| {
                 AppError::Internal("the answer ended before it was complete".to_owned())
             });
+            tracing::warn!(%error, "chat turn produced no usable reply");
             yield Ok(error_event(&error));
             yield Ok(done_event());
             return;
