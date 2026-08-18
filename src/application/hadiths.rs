@@ -23,6 +23,28 @@ impl HadithService {
         self.repository.list(&validate_search(search)?).await
     }
 
+    /// A page of results together with the total matching the same filters.
+    ///
+    /// Validation runs once and both queries use the result, so the count can
+    /// never describe a different filter set than the rows beside it.
+    pub async fn list_page(&self, search: HadithSearch) -> Result<(Vec<Hadith>, i64), AppError> {
+        let search = validate_search(search)?;
+        let hadiths = self.repository.list(&search).await?;
+        let total = self.repository.count(&search).await?;
+
+        Ok((hadiths, total))
+    }
+
+    /// Options for the browser's filter dropdowns.
+    pub async fn filter_options(&self) -> Result<(Vec<String>, Vec<String>), AppError> {
+        const COMMON_GRADES: i64 = 12;
+
+        let books = self.repository.distinct_book_numbers().await?;
+        let grades = self.repository.common_grades(COMMON_GRADES).await?;
+
+        Ok((books, grades))
+    }
+
     pub async fn find_by_id(&self, id: i64) -> Result<Hadith, AppError> {
         validate_id(id)?;
         self.repository.find_by_id(id).await

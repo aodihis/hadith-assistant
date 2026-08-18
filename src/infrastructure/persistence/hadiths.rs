@@ -3,6 +3,35 @@ use sqlx::{PgPool, QueryBuilder};
 use crate::domain::{Hadith, HadithSearch};
 use crate::error::AppError;
 
+/// Applies the shared filter predicates. Used by both `list` and `count` so
+/// the two can never disagree about what matches.
+fn push_filters<'a>(query: &mut QueryBuilder<'a, sqlx::Postgres>, search: &'a HadithSearch) {
+    query.push(" WHERE 1 = 1");
+
+    if let Some(collection) = &search.collection {
+        query.push(" AND c.slug = ").push_bind(collection);
+    }
+
+    if let Some(book_number) = &search.book_number {
+        query.push(" AND h.book_number = ").push_bind(book_number);
+    }
+
+    if let Some(hadith_number) = &search.hadith_number {
+        query
+            .push(" AND h.hadith_number = ")
+            .push_bind(hadith_number);
+    }
+
+    if let Some(grade) = &search.grade {
+        query
+            .push(" AND (h.arabic_grade = ")
+            .push_bind(grade)
+            .push(" OR h.english_grade = ")
+            .push_bind(grade)
+            .push(")");
+    }
+}
+
 #[derive(Clone)]
 pub struct HadithRepository {
     pool: PgPool,
@@ -15,30 +44,7 @@ impl HadithRepository {
 
     pub async fn list(&self, search: &HadithSearch) -> Result<Vec<Hadith>, AppError> {
         let mut query = QueryBuilder::new(HADITH_SELECT);
-        query.push(" WHERE 1 = 1");
-
-        if let Some(collection) = &search.collection {
-            query.push(" AND c.slug = ").push_bind(collection);
-        }
-
-        if let Some(book_number) = &search.book_number {
-            query.push(" AND h.book_number = ").push_bind(book_number);
-        }
-
-        if let Some(hadith_number) = &search.hadith_number {
-            query
-                .push(" AND h.hadith_number = ")
-                .push_bind(hadith_number);
-        }
-
-        if let Some(grade) = &search.grade {
-            query
-                .push(" AND (h.arabic_grade = ")
-                .push_bind(grade)
-                .push(" OR h.english_grade = ")
-                .push_bind(grade)
-                .push(")");
-        }
+        push_filters(&mut query, search);
 
         query
             .push(" ORDER BY c.slug, h.book_number, h.id LIMIT ")
@@ -52,6 +58,67 @@ impl HadithRepository {
             .await?;
 
         Ok(hadiths)
+    }
+
+    /// Total rows matching the same filters as `list`, ignoring paging.
+    ///
+    /// Shares `push_filters` with `list` on purpose: a count that drifts from
+    /// the listing it labels is worse than no count at all.
+    pub async fn count(&self, search: &HadithSearch) -> Result<i64, AppError> {
+        let mut query = QueryBuilder::new(
+            "SELECT COUNT(*) FROM hadiths h JOIN collections c ON c.id = h.collection_id",
+        );
+        push_filters(&mut query, search);
+
+        let total = query
+            .build_query_scalar::<i64>()
+            .fetch_one(&self.pool)
+            .await?;
+
+        Ok(total)
+    }
+
+    /// Book numbers present in the data, for the browser's filter dropdown.
+    pub async fn distinct_book_numbers(&self) -> Result<Vec<String>, AppError> {
+        let books = sqlx::query_scalar::<_, String>(
+            r#"
+            -- GROUP BY rather than DISTINCT: ordering by a derived
+            -- expression is only allowed when the column is grouped.
+            -- Numeric-looking books sort numerically so 2 precedes 10.
+            SELECT book_number
+            FROM hadiths
+            GROUP BY book_number
+            ORDER BY NULLIF(regexp_replace(book_number, '\D', '', 'g'), '')::BIGINT NULLS LAST,
+                     book_number
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(books)
+    }
+
+    /// The most common grades, most frequent first.
+    ///
+    /// The source data carries hundreds of grade spellings — casing and
+    /// apostrophe variants of the same few grades — so offering every distinct
+    /// value would be unusable. The common ones cover almost every record.
+    pub async fn common_grades(&self, limit: i64) -> Result<Vec<String>, AppError> {
+        let grades = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT english_grade
+            FROM hadiths
+            WHERE length(btrim(english_grade)) > 0
+            GROUP BY english_grade
+            ORDER BY COUNT(*) DESC
+            LIMIT $1
+            "#,
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(grades)
     }
 
     pub async fn find_by_id(&self, id: i64) -> Result<Hadith, AppError> {
