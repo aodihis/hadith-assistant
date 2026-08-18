@@ -18,10 +18,11 @@ pub struct VectorConfig {
     pub qdrant_collection: String,
     /// Minimum cosine score a match must reach to be treated as relevant.
     ///
-    /// Measured against the current index, natural-language questions score
-    /// roughly 0.40-0.55 and a hadith quoted back verbatim peaks near 0.66, so
-    /// a threshold at or above 0.7 discards everything. Tune with
-    /// RETRIEVAL_MIN_SCORE.
+    /// Measured against the current index with text-embedding-3-small,
+    /// natural-language questions score roughly 0.40-0.55 and a hadith quoted
+    /// back verbatim peaks near 0.66. A threshold at or above 0.7 therefore
+    /// discards everything; 0.45 drops weak matches while real questions still
+    /// answer. Tune with RETRIEVAL_MIN_SCORE.
     pub min_score: f64,
 }
 
@@ -122,7 +123,7 @@ impl VectorConfig {
             min_score: env::var("RETRIEVAL_MIN_SCORE")
                 .ok()
                 .and_then(|raw| raw.trim().parse::<f64>().ok())
-                .unwrap_or(0.7),
+                .unwrap_or(0.45),
         }
     }
 }
@@ -270,7 +271,7 @@ impl Default for VectorConfig {
             provider: "qdrant".to_owned(),
             qdrant_url: "http://localhost:6334".to_owned(),
             qdrant_collection: "hadith_vectors".to_owned(),
-            min_score: 0.7,
+            min_score: 0.45,
         }
     }
 }
