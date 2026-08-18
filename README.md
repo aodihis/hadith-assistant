@@ -19,6 +19,13 @@ deliberately.
 - Qdrant-backed retrieval: embed a query through a swappable `Embedder`,
   search a swappable `VectorStore`, resolve every hit back to its canonical
   Hadith row.
+- Multi-turn chat grounded in retrieved narrations, streamed over server-sent
+  events. Off-topic and uncovered questions are declined rather than answered
+  from weak matches, and a refusal never carries citations.
+- Conversation memory held by the browser and compacted server-side. Nothing
+  about a conversation is stored on the server or in the database.
+- Per-session rate limiting on the chat endpoint, keyed by a signed session
+  token that carries no user identity.
 - Docker Compose services for PostgreSQL, Qdrant, and the complete application.
 
 ## Project structure
@@ -102,8 +109,18 @@ Configuration is loaded from `.env`:
 | `EMBEDDING_BASE_URL` | no | `https://api.openai.com/v1` | Embeddings API base URL |
 | `EMBEDDING_MODEL` | no | `text-embedding-3-small` | Embedding model name |
 | `CHAT_BASE_URL` | no | `https://openrouter.ai/api/v1` | Chat-completion API base URL |
-| `CHAT_MODEL` | no | `deepseek/deepseek-v4-flash` | Chat-completion model name used for answer generation |
-| `RUST_LOG` | no | framework default | Tracing filter |
+| `CHAT_MODEL` | no | `deepseek/deepseek-v4-flash` | Chat-completion model, used for both answers and history compaction |
+| `CHAT_TEMPERATURE` | no | `0.3` | Answer sampling temperature; rejected at startup outside `0.0`-`0.7` |
+| `CHAT_MAX_TOKENS` | no | `700` | Answer length cap; rejected outside `64`-`1200` |
+| `CHAT_SUMMARY_TEMPERATURE` | no | `0.1` | Compaction temperature, colder than answers on purpose |
+| `CHAT_SUMMARY_MAX_TOKENS` | no | `300` | Compaction length cap |
+| `CHAT_HISTORY_MAX_TURNS` | no | `8` | Turns before compaction fires |
+| `CHAT_HISTORY_KEEP_TURNS` | no | `4` | Turns kept verbatim after compaction; must be less than the max |
+| `CHAT_HISTORY_MAX_CHARS` | no | `6000` | Size-based compaction trigger |
+| `CHAT_MAX_QUESTION_CHARS` | no | `1000` | Upper bound on one question |
+| `RETRIEVAL_MIN_SCORE` | no | `0.45` | Minimum cosine score for a match to count as relevant |
+| `SESSION_SECRET` | no | generated per run | Signs chat session tokens; unset means sessions end at restart |
+| `RUST_LOG` | no | `ERROR` only | Tracing filter — set to `info` or warnings stay invisible |
 
 ## Routes
 
@@ -111,6 +128,7 @@ Browser pages:
 
 - `GET /`
 - `GET /hadiths`
+- `GET /chat` — the Sanad chat interface
 
 JSON API:
 
@@ -119,9 +137,12 @@ JSON API:
 - `GET /api/collections/{slug}`
 - `GET /api/hadiths`
 - `GET /api/hadiths/{id}`
+- `GET /api/hadiths/{id}/related`
 - `GET /api/hadiths/by-reference/{collection}/{book_number}/{hadith_number}`
 - `POST /api/retrieval`
-- `POST /api/answers`
+- `POST /api/answers` — single-shot grounded answer
+- `POST /api/chat/session` — issues the session token `/api/chat` requires
+- `POST /api/chat` — streams one conversational turn over server-sent events
 
 The old backend routes moved under `/api` during the full-stack migration.
 Detailed request and response notes are in [docs/api.md](docs/api.md).
@@ -137,8 +158,21 @@ cargo run --bin import_hadiths -- data/imports/hadiths.json
 ```
 
 The import runs in one database transaction and preserves canonical source
-references. Add `--embed` to also embed the newly imported records into
-Qdrant. See [docs/import-hadith-json.md](docs/import-hadith-json.md).
+references. Records already present are skipped, matched on the source dump's
+own `arabicURN` and `englishURN`, so re-running never duplicates canonical
+text. Add `--embed` to also embed the imported records into Qdrant; anything
+already indexed is skipped, so a re-run costs nothing for work already done.
+
+To build the vector index for a collection imported earlier:
+
+```bash
+cargo run --bin import_hadiths -- --embed-collection bukhari
+cargo run --bin import_hadiths -- --embed-collection bukhari --limit 200
+```
+
+Source markup is stripped from the text an embedding is built from, while the
+stored record keeps its original content. See
+[docs/import-hadith-json.md](docs/import-hadith-json.md).
 
 ## Verification
 
