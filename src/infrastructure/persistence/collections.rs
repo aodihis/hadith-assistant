@@ -18,7 +18,9 @@ impl CollectionRepository {
             r#"
             SELECT id, slug, name
             FROM collections
-            ORDER BY slug
+            -- Ordered by display name so the browser's dropdown reads
+            -- alphabetically to a person, not by internal slug.
+            ORDER BY name, slug
             "#,
         )
         .fetch_all(&self.pool)
