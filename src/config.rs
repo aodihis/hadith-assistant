@@ -38,6 +38,11 @@ pub struct ChatConfig {
     pub base_url: String,
     pub api_key: Option<String>,
     pub model: String,
+    /// Model used to compact history. A recap is internal notes rather than
+    /// anything the reader sees, so it can run on a cheaper model than the one
+    /// answering. Defaults to `model`, so setting only `CHAT_MODEL` still moves
+    /// both and the two never drift apart unnoticed.
+    pub summary_model: String,
     /// Decoding profile for grounded answers.
     pub temperature: f32,
     pub max_tokens: u32,
@@ -153,12 +158,16 @@ impl ChatConfig {
 
         validate_history_policy(history_keep_turns, history_max_turns)?;
 
+        let model =
+            non_empty_var("CHAT_MODEL").unwrap_or_else(|| "deepseek/deepseek-v4-flash".to_owned());
+        let summary_model = non_empty_var("CHAT_SUMMARY_MODEL").unwrap_or_else(|| model.clone());
+
         Ok(Self {
             base_url: env::var("CHAT_BASE_URL")
                 .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_owned()),
             api_key: env::var("OPEN_ROUTER_API_KEY").ok(),
-            model: env::var("CHAT_MODEL")
-                .unwrap_or_else(|_| "deepseek/deepseek-v4-flash".to_owned()),
+            model,
+            summary_model,
             temperature,
             max_tokens,
             summary_temperature,
@@ -169,6 +178,19 @@ impl ChatConfig {
             max_question_chars,
         })
     }
+}
+
+/// Reads a variable, treating blank as absent.
+///
+/// `.env` files carry keys with empty values to advertise that the setting
+/// exists, so `KEY=` has to mean "unset" rather than "the empty string" — an
+/// empty model name would otherwise reach the provider as a request for a model
+/// called "".
+fn non_empty_var(key: &str) -> Option<String> {
+    let value = env::var(key).ok()?;
+    let trimmed = value.trim();
+
+    (!trimmed.is_empty()).then(|| trimmed.to_owned())
 }
 
 /// Compaction must reduce the history, otherwise it would fire on every single
@@ -292,6 +314,7 @@ impl Default for ChatConfig {
             base_url: "https://openrouter.ai/api/v1".to_owned(),
             api_key: None,
             model: "deepseek/deepseek-v4-flash".to_owned(),
+            summary_model: "deepseek/deepseek-v4-flash".to_owned(),
             temperature: 0.3,
             max_tokens: 700,
             summary_temperature: 0.1,
@@ -345,6 +368,42 @@ mod tests {
         assert_eq!(config.base_url, "https://openrouter.ai/api/v1");
         assert_eq!(config.api_key, None);
         assert_eq!(config.model, "deepseek/deepseek-v4-flash");
+    }
+
+    #[test]
+    fn the_summary_model_follows_chat_model_unless_set_explicitly() {
+        // SAFETY: test runs single-threaded within this process's env; no
+        // other test reads these two variables concurrently.
+        unsafe {
+            std::env::set_var("CHAT_MODEL", "vendor/answering-model");
+        }
+        let inherited = ChatConfig::from_env().expect("defaults are valid");
+
+        // `.env.example` ships the key with an empty value, which must read as
+        // unset rather than as a model literally named "".
+        unsafe {
+            std::env::set_var("CHAT_SUMMARY_MODEL", "");
+        }
+        let blank = ChatConfig::from_env().expect("defaults are valid");
+
+        unsafe {
+            std::env::set_var("CHAT_SUMMARY_MODEL", "vendor/cheap-model");
+        }
+        let split = ChatConfig::from_env().expect("defaults are valid");
+
+        unsafe {
+            std::env::remove_var("CHAT_MODEL");
+            std::env::remove_var("CHAT_SUMMARY_MODEL");
+        }
+
+        // Moving CHAT_MODEL alone must move both, or an operator switching
+        // models would leave compaction quietly running on the old one.
+        assert_eq!(inherited.model, "vendor/answering-model");
+        assert_eq!(inherited.summary_model, "vendor/answering-model");
+        assert_eq!(blank.summary_model, "vendor/answering-model");
+
+        assert_eq!(split.model, "vendor/answering-model");
+        assert_eq!(split.summary_model, "vendor/cheap-model");
     }
 
     #[test]

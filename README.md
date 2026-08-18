@@ -109,7 +109,8 @@ Configuration is loaded from `.env`:
 | `EMBEDDING_BASE_URL` | no | `https://api.openai.com/v1` | Embeddings API base URL |
 | `EMBEDDING_MODEL` | no | `text-embedding-3-small` | Embedding model name |
 | `CHAT_BASE_URL` | no | `https://openrouter.ai/api/v1` | Chat-completion API base URL |
-| `CHAT_MODEL` | no | `deepseek/deepseek-v4-flash` | Chat-completion model, used for both answers and history compaction |
+| `CHAT_MODEL` | no | `deepseek/deepseek-v4-flash` | Chat-completion model used to answer |
+| `CHAT_SUMMARY_MODEL` | no | value of `CHAT_MODEL` | Model used to compact history; set it to run recaps on something cheaper |
 | `CHAT_TEMPERATURE` | no | `0.3` | Answer sampling temperature; rejected at startup outside `0.0`-`0.7` |
 | `CHAT_MAX_TOKENS` | no | `700` | Answer length cap; rejected outside `64`-`1200` |
 | `CHAT_SUMMARY_TEMPERATURE` | no | `0.1` | Compaction temperature, colder than answers on purpose |

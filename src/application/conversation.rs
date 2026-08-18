@@ -40,6 +40,9 @@ pub struct PreparedTurn {
 pub struct ConversationService {
     retrieval: Arc<RetrievalService>,
     completer: Arc<dyn ChatCompleter>,
+    /// Compaction runs on its own handle so a recap — internal notes the reader
+    /// never sees — can be produced by a cheaper model than the answer.
+    summariser: Arc<dyn ChatCompleter>,
     config: ConversationConfig,
     has_api_key: bool,
 }
@@ -48,12 +51,14 @@ impl ConversationService {
     pub fn new(
         retrieval: Arc<RetrievalService>,
         completer: Arc<dyn ChatCompleter>,
+        summariser: Arc<dyn ChatCompleter>,
         config: ConversationConfig,
         has_api_key: bool,
     ) -> Self {
         Self {
             retrieval,
             completer,
+            summariser,
             config,
             has_api_key,
         }
@@ -152,7 +157,7 @@ impl ConversationService {
         let messages = build_compaction_messages(history.summary.as_deref(), &folded);
 
         match self
-            .completer
+            .summariser
             .complete_messages(&messages, self.config.summary_options)
             .await
         {
@@ -260,6 +265,10 @@ mod tests {
 
         ConversationService::new(
             retrieval,
+            completer.clone(),
+            // These tests script the summarizer, so both handles are the same
+            // fake — matching the single-handle behaviour they were written
+            // against.
             completer,
             ConversationConfig {
                 limits: limits(),

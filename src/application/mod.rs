@@ -76,7 +76,10 @@ impl AppServices {
             keep_turns: chat.history_keep_turns,
             max_history_chars: chat.history_max_chars,
         };
-        let completer: Arc<dyn ChatCompleter> = Arc::new(OpenAiChatClient::new(chat));
+        let summary_model = chat.summary_model.clone();
+        let chat_client = OpenAiChatClient::new(chat);
+        let summariser: Arc<dyn ChatCompleter> = Arc::new(chat_client.with_model(summary_model));
+        let completer: Arc<dyn ChatCompleter> = Arc::new(chat_client);
         let answers = Arc::new(AnswerService::new(
             completer.clone(),
             has_chat_api_key,
@@ -94,6 +97,7 @@ impl AppServices {
         let conversations = Arc::new(ConversationService::new(
             retrieval.clone(),
             completer,
+            summariser,
             ConversationConfig {
                 limits,
                 answer_options,

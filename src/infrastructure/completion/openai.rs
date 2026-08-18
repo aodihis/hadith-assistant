@@ -37,6 +37,17 @@ impl OpenAiChatClient {
             model: config.model,
         }
     }
+
+    /// The same endpoint and credentials pointed at a different model.
+    ///
+    /// Cloning shares the underlying connection pool, so the second model does
+    /// not cost a second pool.
+    pub fn with_model(&self, model: String) -> Self {
+        Self {
+            model,
+            ..self.clone()
+        }
+    }
 }
 
 #[derive(Serialize)]
