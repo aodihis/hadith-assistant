@@ -3,9 +3,12 @@ use topcoat::{
     view::{component, view},
 };
 
+use super::layout::site_chrome;
+
 #[component]
 pub(crate) async fn home_view() -> Result {
     view! {
+      site_chrome(
         <main>
             <section class="hero">
                 <p class="eyebrow">"Source-grounded research"</p>
@@ -47,5 +50,6 @@ pub(crate) async fn home_view() -> Result {
                 </article>
             </section>
         </main>
+      )
     }
 }

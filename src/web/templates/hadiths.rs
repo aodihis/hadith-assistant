@@ -6,6 +6,8 @@ use topcoat::{
 use crate::domain::{Collection, Hadith};
 use crate::text::to_plain_text;
 
+use super::layout::site_chrome;
+
 pub(crate) struct HadithPage {
     pub hadiths: Vec<Hadith>,
     pub total: i64,
@@ -90,6 +92,7 @@ pub(crate) async fn hadith_list_view(page: HadithPage) -> Result {
     let summary = showing.clone();
 
     view! {
+      site_chrome(
         <main>
             <section class="page-heading">
                 <p class="eyebrow">"Canonical records"</p>
@@ -235,5 +238,6 @@ pub(crate) async fn hadith_list_view(page: HadithPage) -> Result {
                 }
             </nav>
         </main>
+      )
     }
 }

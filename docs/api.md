@@ -23,10 +23,15 @@ The application listens on <http://127.0.0.1:3000> by default. Set `HOST` and
 ```http
 GET /
 GET /hadiths
+GET /chat
 ```
 
 `/hadiths` accepts the same filters as the JSON list endpoint and renders
 canonical records on the server.
+
+`/chat` is the Sanad chat surface. It renders only static chrome; every
+narration it shows arrives from `POST /api/chat`, so the page and the JSON API
+read through the same retrieval path.
 
 ## Error envelope
 
@@ -40,6 +45,16 @@ Application errors use a stable JSON shape:
 ```
 
 Database details and internal stack traces are never returned to clients.
+
+| `code` | Status | Meaning |
+| --- | --- | --- |
+| `validation_error` | 400 | Malformed or out-of-range input |
+| `not_found` | 404 | No such record |
+| `conflict` | 409 | Record already exists |
+| `session_expired` | 401 | Chat session unknown or past its lifetime |
+| `too_many_requests` | 429 | Session request budget exhausted |
+| `not_implemented` | 501 | Stage not configured, e.g. no chat API key |
+| `database_error`, `internal_error` | 500 | Server-side failure |
 
 ## Health
 
@@ -123,11 +138,23 @@ Response:
       "hadith_number": "1",
       "arabic_text": "...",
       "english_text": "...",
+      "arabic_grade": "صحيح",
+      "english_grade": "Sahih",
+      "narrator": { "name": "Umar ibn al-Khattab", "role": "sahabi" },
       "score": 0.83
     }
   ]
 }
 ```
+
+Grades are carried verbatim from the canonical record and are never inferred or
+normalized. `narrator` is the primary narrator where one is recorded, and
+`null` otherwise.
+
+Matches scoring below `RETRIEVAL_MIN_SCORE` are discarded before the response
+is built, so a narration that merely shares vocabulary with the query is not
+returned. Measured with `text-embedding-3-small`, natural-language questions
+score roughly 0.40-0.55, so a threshold at or above 0.7 discards everything.
 
 Retrieval embeds the query text through the configured embedding provider,
 searches Qdrant for the nearest indexed Hadith vectors (optionally scoped to
@@ -136,8 +163,11 @@ record before returning it. A vector match that no longer resolves to a
 canonical record (e.g. a stale point after a Hadith was removed) is dropped
 from the response rather than fabricated; it is logged as a warning.
 
-Hadiths are indexed into Qdrant via `import_hadiths --embed`, documented in
-[docs/import-hadith-json.md](import-hadith-json.md).
+Hadiths are indexed into Qdrant via `import_hadiths --embed`, or for records
+imported earlier `import_hadiths --embed-collection <slug>`, documented in
+[docs/import-hadith-json.md](import-hadith-json.md). Source markup is stripped
+from the text a vector is built from, while the stored record keeps its
+original content.
 
 ## Answers
 
@@ -174,6 +204,9 @@ Response:
       "hadith_number": "1",
       "arabic_text": "...",
       "english_text": "...",
+      "arabic_grade": "صحيح",
+      "english_grade": "Sahih",
+      "narrator": { "name": "Umar ibn al-Khattab", "role": "sahabi" },
       "score": 0.83
     }
   ]
@@ -196,6 +229,98 @@ unavailable rather than successful:
 
 A `null` answer is a successful `200` response, not an error. The endpoint
 never substitutes an ungrounded or fabricated answer for a missing one.
+
+## Chat sessions
+
+```http
+POST /api/chat/session
+```
+
+```json
+{ "token": "1755...b9c.4f2a...", "expires_in_seconds": 43200 }
+```
+
+Issues the token `POST /api/chat` requires, sent back in the `x-sanad-session`
+header. The token is HMAC-signed and carries its own issue time, so expiry is
+verified without any server-side lookup.
+
+It holds **no user identity** — it exists to key rate limiting and to make the
+chat endpoint awkward to drive from outside our own pages. It is deliberately
+**not authentication**: anyone may request one. It raises the cost of abuse; it
+does not prevent a determined caller.
+
+Two budgets apply per session: a short burst window and a lifetime cap.
+Exceeding either returns `too_many_requests`.
+
+## Chat
+
+```http
+POST /api/chat
+Content-Type: application/json
+x-sanad-session: <token from /api/chat/session>
+```
+
+```json
+{
+  "message": "What is said about the call to prayer?",
+  "collection": null,
+  "history": {
+    "summary": null,
+    "summarized_turns": 0,
+    "turns": [{ "question": "…", "answer": "…", "refused": false }]
+  }
+}
+```
+
+`history` is optional; omit it on the first turn. It is **never stored on the
+server** — the client holds the conversation and replays it, and the server
+hands back a compacted copy each turn.
+
+The response is a `text/event-stream`. Event order is part of the contract:
+
+| Event | Payload | Notes |
+| --- | --- | --- |
+| `title` | `{ "title": "…" }` | The turn is an answer |
+| `citations` | `{ "citations": [ … ] }` | Released only after `title` |
+| `delta` | `{ "text": "…" }` | Repeated; answer prose |
+| `refusal` | `{ "reason": "off_topic" \| "not_covered", "message": "…" }` | Instead of the three above |
+| `memory` | `{ "history": { … }, "compacted": bool }` | Authoritative next-turn history |
+| `error` | `{ "code": "…", "message": "…" }` | Generation or validation failed |
+| `done` | `{}` | Terminal |
+
+Two properties matter to any client:
+
+**Citations are withheld until the first line proves the turn is an answer.** A
+refusal carries none, ever — attaching narrations to a reply that is not about
+them would be misleading. Sending citations as soon as retrieval finished would
+make them flash on screen and vanish for an off-topic question.
+
+**Commit a turn to local history only when `memory` arrives**, never when
+rendering finishes. If the stream drops mid-answer the user keeps their partial
+text, but history stays untouched, so the next question replays correctly. A
+client that appends optimistically will silently desynchronise the model's
+context from the visible conversation.
+
+Compaction is server-side. Once the history passes its turn or size budget, the
+oldest turns are folded into `summary` and `compacted` is `true`. The summary
+carries hadith references as identifiers only and never narration text: it is
+derived notes, not a source. A failed summarisation never fails the turn — it
+falls back to dropping the oldest turns and reports `compacted: false`.
+
+## Related narrations
+
+```http
+GET /api/hadiths/{id}/related?limit=3
+```
+
+```json
+{ "hadith_id": 412, "related": [ { …RetrievedHadith… } ] }
+```
+
+Finds narrations similar to the given one by embedding its Arabic text. `limit`
+defaults to `3` and is capped at `10`. The relevance threshold applied to
+query-driven retrieval does **not** apply here, because comparing a narration
+against its own text scores on a different scale.
 
 ## Migration from the backend-only layout
 
