@@ -18,7 +18,7 @@ pub use chat::{
 };
 pub use collections::CollectionService;
 pub use conversation::{ConversationConfig, ConversationService, PreparedTurn};
-pub use hadiths::HadithService;
+pub use hadiths::{HadithService, PagedHadiths};
 pub use question::{AnsweredQuestion, QuestionService};
 pub use retrieval::RetrievalService;
 pub use session::{SessionConfig, SessionId, SessionService};

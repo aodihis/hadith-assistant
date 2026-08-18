@@ -62,16 +62,27 @@ struct Bucket {
     window_used: u32,
 }
 
+/// How often expired buckets are swept out. See `evict_expired`.
+const EVICTION_INTERVAL: Duration = Duration::from_secs(5 * 60);
+
+/// Rate-limit state, plus when it was last swept. Both live under one lock so
+/// the sweep check cannot deadlock against the buckets it is sweeping.
+#[derive(Default)]
+struct Tracker {
+    buckets: HashMap<SessionId, Bucket>,
+    last_swept: u64,
+}
+
 pub struct SessionService {
     config: SessionConfig,
-    buckets: Mutex<HashMap<SessionId, Bucket>>,
+    tracker: Mutex<Tracker>,
 }
 
 impl SessionService {
     pub fn new(config: SessionConfig) -> Self {
         Self {
             config,
-            buckets: Mutex::new(HashMap::new()),
+            tracker: Mutex::new(Tracker::default()),
         }
     }
 
@@ -97,12 +108,13 @@ impl SessionService {
         let (issued_at, id) = self.verify(token)?;
 
         let now = now_secs();
-        let mut buckets = self
-            .buckets
+        let mut tracker = self
+            .tracker
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
 
-        self.evict_expired(&mut buckets, now);
+        Self::evict_expired(&mut tracker, self.config.ttl.as_secs(), now);
+        let buckets = &mut tracker.buckets;
 
         if !buckets.contains_key(&id) && buckets.len() >= self.config.max_tracked {
             return Err(AppError::TooManyRequests(
@@ -164,9 +176,21 @@ impl SessionService {
         Ok((issued_at, SessionId(nonce.to_owned())))
     }
 
-    fn evict_expired(&self, buckets: &mut HashMap<SessionId, Bucket>, now: u64) {
-        let ttl = self.config.ttl.as_secs();
-        buckets.retain(|_, bucket| now.saturating_sub(bucket.issued_at) < ttl);
+    /// Sweeps expired buckets, at most once per `EVICTION_INTERVAL`.
+    ///
+    /// The sweep is O(tracked sessions) and runs under the lock, so doing it on
+    /// every request would make each chat turn pay for every other session's
+    /// bookkeeping. Sessions live 12 hours; sweeping every few minutes discards
+    /// them soon enough, and `max_tracked` still bounds the map between sweeps.
+    fn evict_expired(tracker: &mut Tracker, ttl: u64, now: u64) {
+        if now.saturating_sub(tracker.last_swept) < EVICTION_INTERVAL.as_secs() {
+            return;
+        }
+        tracker.last_swept = now;
+
+        tracker
+            .buckets
+            .retain(|_, bucket| now.saturating_sub(bucket.issued_at) < ttl);
     }
 }
 

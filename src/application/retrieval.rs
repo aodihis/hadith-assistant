@@ -56,8 +56,12 @@ impl RetrievalService {
             .iter()
             .map(|candidate| candidate.hadith_id)
             .collect();
-        let hadiths = self.hadiths.find_by_ids(&ids).await?;
-        let narrators = self.narrators.find_primary_by_hadith_ids(&ids).await?;
+        // Neither query needs the other's result, and this runs on every chat
+        // turn, so paying two round trips in series is a round trip wasted.
+        let (hadiths, narrators) = tokio::try_join!(
+            self.hadiths.find_by_ids(&ids),
+            self.narrators.find_primary_by_hadith_ids(&ids)
+        )?;
 
         Ok(assemble(matches, hadiths, narrators))
     }

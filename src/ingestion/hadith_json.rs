@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
@@ -132,6 +133,10 @@ async fn import_dump(
 
     let mut inserted_ids = Vec::with_capacity(dump.hadith_table.len());
     let mut skipped_ids = Vec::new();
+    // A dump carries a handful of collections across many thousands of rows, so
+    // resolving the collection per record would issue an upsert round trip that
+    // almost always returns the id already known from the previous row.
+    let mut collection_ids: HashMap<String, i64> = HashMap::new();
 
     for record in &dump.hadith_table {
         // (arabic_urn, english_urn) is the source dump's own stable identity,
@@ -140,7 +145,18 @@ async fn import_dump(
         // record may exist in Postgres yet be missing from the vector index.
         match find_existing_id(&mut tx, record).await? {
             Some(existing_id) => skipped_ids.push(existing_id),
-            None => inserted_ids.push(insert_record(&mut tx, record).await?),
+            None => {
+                let slug = record.collection.trim();
+                let collection_id = match collection_ids.get(slug) {
+                    Some(id) => *id,
+                    None => {
+                        let id = upsert_collection(&mut tx, slug).await?;
+                        collection_ids.insert(slug.to_owned(), id);
+                        id
+                    }
+                };
+                inserted_ids.push(insert_record(&mut tx, record, collection_id).await?);
+            }
         }
     }
 
@@ -176,8 +192,8 @@ async fn find_existing_id(
 async fn insert_record(
     tx: &mut Transaction<'_, Postgres>,
     record: &RawHadithRecord,
+    collection_id: i64,
 ) -> Result<i64, ImportError> {
-    let collection_id = upsert_collection(tx, record.collection.trim()).await?;
     let parsed = parse_isnad(
         validated_arabic_text(record),
         record.english_text.as_deref(),

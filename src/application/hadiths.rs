@@ -7,6 +7,18 @@ use crate::infrastructure::persistence::hadiths::HadithRepository;
 const DEFAULT_LIMIT: i64 = 50;
 const MAX_LIMIT: i64 = 200;
 
+/// A page of results, with the filters that actually produced them.
+///
+/// `search` is the *effective* search, not the requested one: limits clamped,
+/// blank filters dropped. A caller rendering the filter UI needs this rather
+/// than the raw request, or the controls will claim a filter that was never
+/// applied.
+pub struct PagedHadiths {
+    pub hadiths: Vec<Hadith>,
+    pub total: i64,
+    pub search: HadithSearch,
+}
+
 #[derive(Clone)]
 pub struct HadithService {
     repository: HadithRepository,
@@ -27,12 +39,16 @@ impl HadithService {
     ///
     /// Validation runs once and both queries use the result, so the count can
     /// never describe a different filter set than the rows beside it.
-    pub async fn list_page(&self, search: HadithSearch) -> Result<(Vec<Hadith>, i64), AppError> {
+    pub async fn list_page(&self, search: HadithSearch) -> Result<PagedHadiths, AppError> {
         let search = validate_search(search)?;
         let hadiths = self.repository.list(&search).await?;
         let total = self.repository.count(&search).await?;
 
-        Ok((hadiths, total))
+        Ok(PagedHadiths {
+            hadiths,
+            total,
+            search,
+        })
     }
 
     /// Options for the browser's filter dropdowns.
@@ -112,10 +128,26 @@ fn required(field: &str, value: &str) -> Result<String, AppError> {
     Ok(value.to_owned())
 }
 
+/// Trims a filter, treating blank as absent.
+///
+/// Takes the `String` by value so the common case — a filter that needs no
+/// trimming, which is every value picked from a dropdown — reuses the caller's
+/// allocation instead of copying it. That is the whole reason `validate_search`
+/// consumes its argument rather than borrowing: borrowing would force a copy on
+/// every field of every request.
 fn trim_optional(value: Option<String>) -> Option<String> {
-    value
-        .map(|value| value.trim().to_owned())
-        .filter(|value| !value.is_empty())
+    let value = value?;
+    let trimmed = value.trim();
+
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if trimmed.len() == value.len() {
+        return Some(value);
+    }
+
+    Some(trimmed.to_owned())
 }
 
 #[cfg(test)]
@@ -158,6 +190,29 @@ mod tests {
         assert_eq!(search.book_number, None);
         assert_eq!(search.hadith_number, None);
         assert_eq!(search.grade, None);
+    }
+
+    #[test]
+    fn an_already_trimmed_filter_keeps_its_allocation() {
+        let original = "bukhari".to_owned();
+        let address = original.as_ptr();
+
+        let trimmed = trim_optional(Some(original)).expect("a non-blank filter survives");
+
+        // Same buffer, not a copy: consuming the argument is only worthwhile if
+        // the untouched case is free.
+        assert_eq!(trimmed.as_ptr(), address);
+        assert_eq!(trimmed, "bukhari");
+    }
+
+    #[test]
+    fn a_padded_filter_is_trimmed() {
+        assert_eq!(
+            trim_optional(Some("  Sahih  ".to_owned())).as_deref(),
+            Some("Sahih")
+        );
+        assert_eq!(trim_optional(Some("   ".to_owned())), None);
+        assert_eq!(trim_optional(None), None);
     }
 
     #[test]

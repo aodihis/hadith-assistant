@@ -217,10 +217,7 @@ async fn chat(cx: &Cx, Json(request): Json<ChatRequest>) -> Result<Sse<ChatEvent
             .finish(history, prepared.question, &reply)
             .await;
 
-        yield Ok(Event::new()
-            .event("memory")
-            .json_data(&MemoryEvent { history: history.into(), compacted })
-            .unwrap_or_else(|_| Event::new().event("memory").data("{}")));
+        yield Ok(sse_event("memory", MemoryEvent { history: history.into(), compacted }));
 
         yield Ok(done_event());
     };
@@ -232,6 +229,18 @@ async fn chat(cx: &Cx, Json(request): Json<ChatRequest>) -> Result<Sse<ChatEvent
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
+/// Builds one named SSE frame.
+///
+/// A payload that will not serialize degrades to `{}` under the same event
+/// name rather than dropping the frame: the client's state machine is driven by
+/// event order, so a missing frame would strand it waiting.
+fn sse_event(name: &str, payload: impl serde::Serialize) -> Event {
+    Event::new()
+        .event(name)
+        .json_data(&payload)
+        .unwrap_or_else(|_| Event::new().event(name).data("{}"))
+}
+
 /// Maps an assembler event onto the wire, releasing citations at the moment the
 /// turn is known to be an answer.
 fn render(
@@ -241,40 +250,28 @@ fn render(
 ) -> Vec<Event> {
     match event {
         StreamEvent::Title(title) => {
-            let mut events = vec![
-                Event::new()
-                    .event("title")
-                    .json_data(&serde_json::json!({ "title": title }))
-                    .unwrap_or_else(|_| Event::new().event("title").data("{}")),
-            ];
+            let mut events = vec![sse_event("title", serde_json::json!({ "title": title }))];
 
             if !*citations_sent {
                 *citations_sent = true;
-                events.push(
-                    Event::new()
-                        .event("citations")
-                        .json_data(&serde_json::json!({ "citations": citations }))
-                        .unwrap_or_else(|_| Event::new().event("citations").data("{}")),
-                );
+                events.push(sse_event(
+                    "citations",
+                    serde_json::json!({ "citations": citations }),
+                ));
             }
 
             events
         }
-        StreamEvent::Delta(text) => vec![
-            Event::new()
-                .event("delta")
-                .json_data(&serde_json::json!({ "text": text }))
-                .unwrap_or_else(|_| Event::new().event("delta").data("{}")),
-        ],
-        StreamEvent::Refused { reason, message } => vec![
-            Event::new()
-                .event("refusal")
-                .json_data(&serde_json::json!({
-                    "reason": reason.as_str(),
-                    "message": message,
-                }))
-                .unwrap_or_else(|_| Event::new().event("refusal").data("{}")),
-        ],
+        StreamEvent::Delta(text) => {
+            vec![sse_event("delta", serde_json::json!({ "text": text }))]
+        }
+        StreamEvent::Refused { reason, message } => vec![sse_event(
+            "refusal",
+            serde_json::json!({
+                "reason": reason.as_str(),
+                "message": message,
+            }),
+        )],
     }
 }
 
@@ -286,13 +283,13 @@ fn error_event(error: &AppError) -> Event {
         tracing::error!(error = ?error, "chat turn failed");
     }
 
-    Event::new()
-        .event("error")
-        .json_data(&ErrorEvent {
+    sse_event(
+        "error",
+        ErrorEvent {
             code: error.code(),
             message: error.public_message(),
-        })
-        .unwrap_or_else(|_| Event::new().event("error").data("{}"))
+        },
+    )
 }
 
 fn done_event() -> Event {

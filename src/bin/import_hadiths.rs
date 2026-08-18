@@ -136,7 +136,7 @@ async fn run_embedding(database_url: &str, hadith_ids: &[i64]) -> Result<usize, 
     let repository = HadithRepository::new(pool);
 
     let embedder = OpenAiEmbedder::new(EmbeddingConfig::from_env());
-    let vector_config = VectorConfig::from_env();
+    let vector_config = VectorConfig::from_env().map_err(|error| error.to_string())?;
     let vector_store =
         QdrantVectorStore::new(&vector_config.qdrant_url, vector_config.qdrant_collection)
             .map_err(|error| error.to_string())?;
@@ -195,7 +195,7 @@ async fn run_collection_embedding(
 
     let repository = HadithRepository::new(pool);
     let embedder = OpenAiEmbedder::new(EmbeddingConfig::from_env());
-    let vector_config = VectorConfig::from_env();
+    let vector_config = VectorConfig::from_env().map_err(|error| error.to_string())?;
     let vector_store =
         QdrantVectorStore::new(&vector_config.qdrant_url, vector_config.qdrant_collection)
             .map_err(|error| error.to_string())?;

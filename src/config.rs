@@ -72,19 +72,19 @@ pub enum ConfigError {
         source: std::num::ParseIntError,
     },
     #[error("invalid {name} `{value}`: {source}")]
-    InvalidChatFloat {
+    InvalidFloat {
         name: &'static str,
         value: String,
         source: std::num::ParseFloatError,
     },
     #[error("invalid {name} `{value}`: {source}")]
-    InvalidChatInteger {
+    InvalidInteger {
         name: &'static str,
         value: String,
         source: std::num::ParseIntError,
     },
     #[error("{name} must be between {min} and {max}, got {value}")]
-    ChatValueOutOfRange {
+    ValueOutOfRange {
         name: &'static str,
         value: String,
         min: String,
@@ -110,7 +110,7 @@ impl Config {
         Ok(Self {
             database_url,
             database_max_connections,
-            vector: VectorConfig::from_env(),
+            vector: VectorConfig::from_env()?,
             embedding: EmbeddingConfig::from_env(),
             chat: ChatConfig::from_env()?,
         })
@@ -118,18 +118,18 @@ impl Config {
 }
 
 impl VectorConfig {
-    pub fn from_env() -> Self {
-        Self {
+    pub fn from_env() -> Result<Self, ConfigError> {
+        Ok(Self {
             provider: env::var("VECTOR_DB_PROVIDER").unwrap_or_else(|_| "qdrant".to_owned()),
             qdrant_url: env::var("QDRANT_URL")
                 .unwrap_or_else(|_| "http://localhost:6334".to_owned()),
             qdrant_collection: env::var("QDRANT_COLLECTION")
                 .unwrap_or_else(|_| "hadith_vectors".to_owned()),
-            min_score: env::var("RETRIEVAL_MIN_SCORE")
-                .ok()
-                .and_then(|raw| raw.trim().parse::<f64>().ok())
-                .unwrap_or(0.45),
-        }
+            // Validated like every other numeric setting rather than silently
+            // defaulting: a typo here does not fail loudly, it quietly changes
+            // which narrations are considered relevant.
+            min_score: float_var("RETRIEVAL_MIN_SCORE", 0.45, 0.0, 1.0)? as f64,
+        })
     }
 }
 
@@ -227,14 +227,14 @@ fn parse_float(
     let value = raw
         .trim()
         .parse::<f32>()
-        .map_err(|source| ConfigError::InvalidChatFloat {
+        .map_err(|source| ConfigError::InvalidFloat {
             name,
             value: raw.to_owned(),
             source,
         })?;
 
     if !(min..=max).contains(&value) {
-        return Err(ConfigError::ChatValueOutOfRange {
+        return Err(ConfigError::ValueOutOfRange {
             name,
             value: value.to_string(),
             min: min.to_string(),
@@ -269,14 +269,14 @@ where
     let value = raw
         .trim()
         .parse::<T>()
-        .map_err(|source| ConfigError::InvalidChatInteger {
+        .map_err(|source| ConfigError::InvalidInteger {
             name,
             value: raw.to_owned(),
             source,
         })?;
 
     if value < min || value > max {
-        return Err(ConfigError::ChatValueOutOfRange {
+        return Err(ConfigError::ValueOutOfRange {
             name,
             value: value.to_string(),
             min: min.to_string(),
@@ -450,13 +450,13 @@ mod tests {
         let error = parse_float("CHAT_TEMPERATURE", Some("hot"), 0.3, 0.0, 0.7)
             .expect_err("a non-numeric temperature must fail startup");
         assert!(
-            matches!(error, ConfigError::InvalidChatFloat { name, .. } if name == "CHAT_TEMPERATURE")
+            matches!(error, ConfigError::InvalidFloat { name, .. } if name == "CHAT_TEMPERATURE")
         );
 
         let error = parse_int("CHAT_MAX_TOKENS", Some("lots"), 700, 64, 1200)
             .expect_err("a non-numeric token budget must fail startup");
         assert!(
-            matches!(error, ConfigError::InvalidChatInteger { name, .. } if name == "CHAT_MAX_TOKENS")
+            matches!(error, ConfigError::InvalidInteger { name, .. } if name == "CHAT_MAX_TOKENS")
         );
     }
 
@@ -466,15 +466,15 @@ mod tests {
         // would silently ignore — refuse instead.
         assert!(matches!(
             parse_float("CHAT_TEMPERATURE", Some("1.5"), 0.3, 0.0, 0.7),
-            Err(ConfigError::ChatValueOutOfRange { .. })
+            Err(ConfigError::ValueOutOfRange { .. })
         ));
         assert!(matches!(
             parse_int("CHAT_MAX_TOKENS", Some("50000"), 700, 64, 1200),
-            Err(ConfigError::ChatValueOutOfRange { .. })
+            Err(ConfigError::ValueOutOfRange { .. })
         ));
         assert!(matches!(
             parse_int("CHAT_MAX_TOKENS", Some("1"), 700, 64, 1200),
-            Err(ConfigError::ChatValueOutOfRange { .. })
+            Err(ConfigError::ValueOutOfRange { .. })
         ));
     }
 

@@ -129,6 +129,24 @@
     return grade || null;
   }
 
+  // Appends the narration text itself — Arabic, then translation.
+  //
+  // Shared by the citation card and the drawer so the two cannot drift on how
+  // canonical text is tagged; lang/dir in particular are correctness for a
+  // right-to-left script, not decoration.
+  function appendNarrationText(target, hadith) {
+    const arabic = el("p", "arabic", plainText(hadith.arabic_text));
+    arabic.lang = "ar";
+    arabic.dir = "rtl";
+    target.append(arabic);
+
+    if (hadith.english_text) {
+      const translation = el("div", "translation");
+      paragraphsInto(translation, hadith.english_text);
+      target.append(translation);
+    }
+  }
+
   function citationCard(hadith) {
     const card = el("article", "chat-card");
     card.dataset.hadithId = String(hadith.hadith_id);
@@ -143,16 +161,7 @@
     if (grade) meta.append(el("span", "chat-grade", grade));
     card.append(meta);
 
-    const arabic = el("p", "arabic", plainText(hadith.arabic_text));
-    arabic.lang = "ar";
-    arabic.dir = "rtl";
-    card.append(arabic);
-
-    if (hadith.english_text) {
-      const translation = el("div", "translation");
-      paragraphsInto(translation, hadith.english_text);
-      card.append(translation);
-    }
+    appendNarrationText(card, hadith);
 
     const foot = el("div", "chat-card-foot");
     if (hadith.narrator) {
@@ -376,15 +385,7 @@
     const grade = gradeLabel(hadith);
     if (grade) head.append(el("p", "chat-grade", grade));
 
-    const arabic = el("p", "arabic", plainText(hadith.arabic_text));
-    arabic.lang = "ar";
-    arabic.dir = "rtl";
-    head.append(arabic);
-    if (hadith.english_text) {
-      const translation = el("div", "translation");
-      paragraphsInto(translation, hadith.english_text);
-      head.append(translation);
-    }
+    appendNarrationText(head, hadith);
     if (hadith.narrator) head.append(el("p", "chat-muted", `Narrated by ${hadith.narrator.name}`));
 
     drawerBody.replaceChildren(head);

@@ -39,50 +39,47 @@ async fn browse(cx: &Cx) -> Result {
 
     let services = app_context::<AppServices>(cx);
 
-    let filter = |value: &Option<String>| {
-        value
-            .clone()
-            .map(|value| value.trim().to_owned())
-            .filter(|value| !value.is_empty())
-    };
-
+    // Filters are passed through raw: `HadithService` normalizes them, and it
+    // is the only place that should, so the page and the JSON route cannot
+    // disagree about what an empty filter means.
     let search = HadithSearch {
-        collection: filter(&query.collection),
-        book_number: filter(&query.book_number),
-        hadith_number: filter(&query.hadith_number),
-        grade: filter(&query.grade),
+        collection: query.collection.clone(),
+        book_number: query.book_number.clone(),
+        hadith_number: query.hadith_number.clone(),
+        grade: query.grade.clone(),
         limit,
         offset,
     };
 
-    let (hadiths, total) = services
-        .hadiths
-        .list_page(search)
-        .await
-        .map_err(page_error)?;
+    // The page needs all three before it can render and none depends on
+    // another, so they go out together rather than as three serial round trips.
+    let (page, collections, (book_numbers, grades)) = tokio::try_join!(
+        services.hadiths.list_page(search),
+        services.collections.list(),
+        services.hadiths.filter_options()
+    )
+    .map_err(page_error)?;
 
-    let collections = services.collections.list().await.map_err(page_error)?;
-    let (book_numbers, grades) = services
-        .hadiths
-        .filter_options()
-        .await
-        .map_err(page_error)?;
+    // Rendered from the effective search rather than the raw query, so the
+    // controls always show the filters that actually ran. The strings are moved
+    // out of it, not copied again.
+    let applied = page.search;
 
     view! {
         hadith_list_view(
             page: HadithPage {
-                hadiths,
-                total,
-                limit,
-                offset,
+                hadiths: page.hadiths,
+                total: page.total,
+                limit: applied.limit,
+                offset: applied.offset,
                 page_sizes: PAGE_SIZES.to_vec(),
                 collections,
                 book_numbers,
                 grades,
-                selected_collection: query.collection.clone().unwrap_or_default(),
-                selected_book_number: query.book_number.clone().unwrap_or_default(),
-                selected_grade: query.grade.clone().unwrap_or_default(),
-                hadith_number: query.hadith_number.clone().unwrap_or_default(),
+                selected_collection: applied.collection.unwrap_or_default(),
+                selected_book_number: applied.book_number.unwrap_or_default(),
+                selected_grade: applied.grade.unwrap_or_default(),
+                hadith_number: applied.hadith_number.unwrap_or_default(),
             },
         )
     }

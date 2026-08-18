@@ -94,8 +94,14 @@ fn build_user_prompt(query: &str, hadiths: &[RetrievedHadith]) -> String {
 static TITLE_LINE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)^\s*Title:\s*(.+)$").expect("valid regex"));
 
-/// Shared with the chat path, which wraps this to recognise refusals before
-/// falling back to the plain answer shape.
+/// Parses the single-shot `/api/answers` reply shape.
+///
+/// The streaming chat path deliberately does NOT share this. It classifies the
+/// header as the bytes arrive, because it has to decide whether to release
+/// citations before the reply is complete — see `chat::ReplyAssembler`. Two
+/// parsers over one format is a hazard the chat path was already bitten by, so
+/// if `/api/answers` ever grows the refusal shape, route it through the
+/// assembler rather than teaching this a second contract.
 pub(crate) fn parse_answer(raw: &str) -> Option<Answer> {
     let (first_line, rest) = raw.split_once('\n').unwrap_or((raw, ""));
 
