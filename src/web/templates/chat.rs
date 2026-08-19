@@ -9,8 +9,8 @@ use crate::web::CHAT_SCRIPT;
 ///
 /// Only the static chrome is server-rendered: the hero, its suggestion chips,
 /// and the empty containers. Everything conversational — turns, citation cards,
-/// the narration drawer, the saved list — is rendered by `chat.js` from the
-/// events `/api/chat` streams back. No canonical hadith text is baked into this
+/// and the narration drawer — is rendered by `chat.js` from the events
+/// `/api/chat` streams back. No canonical hadith text is baked into this
 /// page, so the browser and the JSON API read from the same retrieval path.
 #[component]
 pub(crate) async fn chat_view() -> Result {
@@ -21,10 +21,6 @@ pub(crate) async fn chat_view() -> Result {
                     <span class="chat-mark" aria-hidden="true">"۞"</span>
                     "Sanad"
                 </a>
-                <button class="chat-saved-toggle" type="button" data-action="open-saved">
-                    "❖ Saved "
-                    <span data-bind="bookmark-count">"0"</span>
-                </button>
             </header>
 
             <section class="chat-hero" data-region="hero">
@@ -93,14 +89,6 @@ pub(crate) async fn chat_view() -> Result {
                 </div>
                 <div class="chat-drawer-body" data-region="drawer-body"></div>
             </aside>
-
-            <section class="chat-saved" data-region="saved" hidden=(true) aria-label="Saved narrations">
-                <div class="chat-drawer-head">
-                    <span>"Your collection"</span>
-                    <button type="button" data-action="close-saved" aria-label="Close">"×"</button>
-                </div>
-                <div class="chat-saved-body" data-region="saved-body"></div>
-            </section>
 
             <div class="chat-toast" data-region="toast" hidden=(true)></div>
         </div>

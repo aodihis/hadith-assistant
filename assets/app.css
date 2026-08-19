@@ -2,8 +2,8 @@
   color-scheme: light;
   --ink: #1e2b21;
   --muted: #4c5c4e;
-  --paper: #f1f0df;
-  --surface: #faf9ec;
+  --paper: #f9f7f0;
+  --surface: #fffdf7;
   --line: #d5ddc4;
   /* The four supplied colours, darkest first. Each is a fill or a decorative
      tone: none of them reaches 4.5:1 against a light ground, so the text tones
@@ -63,8 +63,13 @@ a {
   text-decoration: none;
 }
 
+/* U+06DE is an Arabic ornament, drawn against Amiri's Arabic baseline, which
+   sits lower in the em box than the Latin wordmark beside it. Both flex items
+   are the same height and already centred, so the drop is inside the glyph and
+   only an optical lift corrects it. Tune the offset here if the face changes. */
 .brand-mark {
   color: var(--green);
+  transform: translateY(-0.1em);
 }
 
 nav {
@@ -139,7 +144,7 @@ h1 {
   justify-content: center;
   padding: 0.7rem 1rem;
   border: 1px solid var(--green);
-  border-radius: 0.4rem;
+  border-radius: 0;
   font: inherit;
   font-weight: 700;
   text-decoration: none;
@@ -306,7 +311,7 @@ footer a {
 
 .collection {
   padding: 0.3rem 0.55rem;
-  border-radius: 999px;
+  border-radius: 0;
   color: var(--green-deep);
   background: var(--green-light);
   font-weight: 800;
@@ -423,12 +428,12 @@ footer {
 /* The chat page owns the whole viewport: no site header or footer sits above
    it, so it can size to 100vh and keep its composer pinned. */
 body:has(.chat-app) {
-  background: #f1f0df;
+  background: var(--paper);
 }
 
 .chat-app {
-  --sanad-paper: #f1f0df;
-  --sanad-surface: #faf9ec;
+  --sanad-paper: var(--paper);
+  --sanad-surface: var(--surface);
   --sanad-green: #537d5d;
   --sanad-accent: #6b6a33;
   display: flex;
@@ -458,18 +463,10 @@ body:has(.chat-app) {
   text-decoration: none;
 }
 
+/* Lifted for the same reason as .brand-mark; keep the two offsets in step. */
 .chat-mark {
   color: var(--green);
-}
-
-.chat-saved-toggle {
-  padding: 0.4rem 0.9rem;
-  border: 1px solid rgba(30, 43, 33, 0.16);
-  border-radius: 999px;
-  background: var(--sanad-surface);
-  font: inherit;
-  font-size: 0.85rem;
-  cursor: pointer;
+  transform: translateY(-0.1em);
 }
 
 .chat-hero {
@@ -516,7 +513,7 @@ body:has(.chat-app) {
 .chat-suggestions button {
   padding: 0.5rem 0.95rem;
   border: 1px solid var(--green-mid);
-  border-radius: 999px;
+  border-radius: 0;
   background: transparent;
   color: #4c5c4e;
   font: inherit;
@@ -642,7 +639,7 @@ body:has(.chat-app) {
 
 .chat-grade {
   padding: 0.15rem 0.5rem;
-  border-radius: 0.2rem;
+  border-radius: 0;
   color: var(--green-deep);
   background: rgba(83, 125, 93, 0.18);
   font-weight: 700;
@@ -668,7 +665,7 @@ body:has(.chat-app) {
   width: min(100% - 2rem, 48rem);
   margin: 0 auto;
   padding: 0.75rem 0 1.25rem;
-  background: linear-gradient(180deg, rgba(241, 240, 223, 0) 0%, var(--sanad-paper) 30%);
+  background: linear-gradient(180deg, rgba(249, 247, 240, 0) 0%, var(--sanad-paper) 30%);
 }
 
 /* One field holding both controls, rather than a pill input beside a pill
@@ -680,7 +677,7 @@ body:has(.chat-app) {
   gap: 0.5rem;
   padding: 0.3rem 0.3rem 0.3rem 0.9rem;
   border: 1px solid rgba(30, 43, 33, 0.18);
-  border-radius: 1.15rem;
+  border-radius: 0;
   background: var(--sanad-surface);
   box-shadow: 0 1px 2px rgba(30, 43, 33, 0.05);
 }
@@ -716,7 +713,7 @@ body:has(.chat-app) {
   height: 2rem;
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: 0;
   color: #ffffff;
   background: var(--sanad-green);
   font: inherit;
@@ -737,8 +734,7 @@ body:has(.chat-app) {
   background: rgba(24, 33, 25, 0.45);
 }
 
-.chat-drawer,
-.chat-saved {
+.chat-drawer {
   position: fixed;
   inset-block: 0;
   right: 0;
@@ -746,7 +742,7 @@ body:has(.chat-app) {
   width: min(31rem, 94vw);
   overflow-y: auto;
   border-left: 1px solid rgba(107, 106, 51, 0.3);
-  background: #f4f3e4;
+  background: #f3f0e6;
 }
 
 .chat-drawer-head {
@@ -757,7 +753,7 @@ body:has(.chat-app) {
   justify-content: space-between;
   padding: 0.9rem 1.2rem;
   border-bottom: 1px solid rgba(30, 43, 33, 0.12);
-  background: #f4f3e4;
+  background: #f3f0e6;
   font-family: var(--serif);
   font-size: 1.1rem;
   color: var(--sanad-green);
@@ -765,7 +761,7 @@ body:has(.chat-app) {
 
 .chat-drawer-head button {
   border: 1px solid rgba(30, 43, 33, 0.16);
-  border-radius: 50%;
+  border-radius: 0;
   width: 2rem;
   height: 2rem;
   background: var(--sanad-surface);
@@ -773,15 +769,8 @@ body:has(.chat-app) {
   cursor: pointer;
 }
 
-.chat-drawer-body,
-.chat-saved-body {
+.chat-drawer-body {
   padding: 1.5rem 1.3rem 3rem;
-}
-
-.chat-saved-row {
-  padding: 0.6rem 0;
-  border-bottom: 1px solid rgba(30, 43, 33, 0.08);
-  font-size: 0.9rem;
 }
 
 .chat-muted {

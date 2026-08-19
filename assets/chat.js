@@ -27,20 +27,13 @@
   const drawer = region("drawer");
   const drawerBody = region("drawer-body");
   const backdrop = region("backdrop");
-  const savedPanel = region("saved");
-  const savedBody = region("saved-body");
   const toastEl = region("toast");
-  const bookmarkCount = app.querySelector('[data-bind="bookmark-count"]');
-
-  const BOOKMARK_KEY = "sanad.bookmarks.v1";
-  const MAX_BOOKMARKS = 200;
 
   const state = {
     token: null,
     history: null,
     transcript: [],
     pending: false,
-    bookmarks: loadBookmarks(),
   };
 
   // ---------------------------------------------------------------- helpers
@@ -86,28 +79,6 @@
     for (const paragraph of plainText(text).split("\n")) {
       if (paragraph) parent.append(el("p", null, paragraph));
     }
-  }
-
-  function loadBookmarks() {
-    try {
-      const raw = JSON.parse(localStorage.getItem(BOOKMARK_KEY) || "null");
-      if (!raw || raw.version !== 1 || !Array.isArray(raw.items)) return [];
-      return raw.items;
-    } catch {
-      return [];
-    }
-  }
-
-  function saveBookmarks() {
-    try {
-      localStorage.setItem(
-        BOOKMARK_KEY,
-        JSON.stringify({ version: 1, items: state.bookmarks.slice(0, MAX_BOOKMARKS) }),
-      );
-    } catch {
-      toast("Could not save — your browser storage is full.");
-    }
-    bookmarkCount.textContent = String(state.bookmarks.length);
   }
 
   function toast(message) {
@@ -184,11 +155,6 @@
     open.type = "button";
     open.dataset.action = "open-hadith";
     foot.append(open);
-
-    const save = el("button", "chat-link", isSaved(hadith.hadith_id) ? "❖ Saved" : "♢ Save");
-    save.type = "button";
-    save.dataset.action = "toggle-bookmark";
-    foot.append(save);
 
     card.append(foot);
     return card;
@@ -348,10 +314,6 @@
 
   // ---------------------------------------------------------------- drawer
 
-  function isSaved(id) {
-    return state.bookmarks.some((item) => item.hadith_id === id);
-  }
-
   function findHadith(id) {
     for (const turn of state.transcript) {
       for (const hadith of turn.citations || []) {
@@ -359,29 +321,6 @@
       }
     }
     return null;
-  }
-
-  function toggleBookmark(id) {
-    const hadith = findHadith(id);
-    if (!hadith) return;
-
-    if (isSaved(id)) {
-      state.bookmarks = state.bookmarks.filter((item) => item.hadith_id !== id);
-      toast("Removed from your collection");
-    } else {
-      // Identifiers only. A localStorage copy of canonical text would go stale
-      // against the database with no way to notice.
-      state.bookmarks.push({
-        hadith_id: id,
-        collection: hadith.collection,
-        book_number: hadith.book_number,
-        hadith_number: hadith.hadith_number,
-        saved_at: new Date().toISOString(),
-      });
-      toast("Saved to your collection");
-    }
-    saveBookmarks();
-    repaint();
   }
 
   async function openDrawer(id) {
@@ -421,25 +360,7 @@
 
   function closeOverlays() {
     drawer.hidden = true;
-    savedPanel.hidden = true;
     backdrop.hidden = true;
-  }
-
-  function openSaved() {
-    savedBody.replaceChildren();
-    if (!state.bookmarks.length) {
-      savedBody.append(el("p", "chat-muted", "No saved narrations yet."));
-    } else {
-      for (const item of state.bookmarks) {
-        const row = el("div", "chat-saved-row");
-        row.append(
-          el("span", null, `${item.collection} ${item.book_number}:${item.hadith_number}`),
-        );
-        savedBody.append(row);
-      }
-    }
-    savedPanel.hidden = false;
-    backdrop.hidden = false;
   }
 
   // ---------------------------------------------------------------- events
@@ -466,14 +387,7 @@
       case "open-hadith":
         openDrawer(id);
         break;
-      case "toggle-bookmark":
-        toggleBookmark(id);
-        break;
-      case "open-saved":
-        openSaved();
-        break;
       case "close-drawer":
-      case "close-saved":
         closeOverlays();
         break;
     }
@@ -483,6 +397,4 @@
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeOverlays();
   });
-
-  bookmarkCount.textContent = String(state.bookmarks.length);
 })();
