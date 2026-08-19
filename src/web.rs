@@ -6,6 +6,7 @@ mod templates;
 use topcoat::{
     Result,
     asset::{Asset, AssetBundle, RouterBuilderAssetExt, asset},
+    font::{Font, RouterBuilderFontExt, fontsource::fontsource_font},
     router::{Router, layout, page},
     view::view,
 };
@@ -14,6 +15,28 @@ use crate::application::AppServices;
 use templates::{home::home_view, layout::page_shell};
 
 const STYLES: Asset = asset!("assets/app.css");
+
+/// Amiri covers both display roles: it is a classical naskh, so the headings
+/// and the hadith Arabic come from one family. The Arabic subset is requested
+/// explicitly — unlike weight and style, an omitted `subset` pulls in the
+/// family default (Latin) alone, which would leave the narrations unstyled.
+pub(crate) const AMIRI: Font = fontsource_font!(
+    AMIRI,
+    weight: [400, 700],
+    style: Normal,
+    subset: [Arabic, Latin, LatinExt],
+    host: Asset,
+);
+
+/// Inter carries body and UI text. Only the three weights the stylesheet
+/// actually asks for are built, rather than the nine the family ships.
+pub(crate) const INTER: Font = fontsource_font!(
+    INTER,
+    weight: [400, 700, 800],
+    style: Normal,
+    subset: [Latin, LatinExt],
+    host: Asset,
+);
 /// Referenced from the chat view so the bundler keeps it; an unused Asset
 /// const is optimized out and vanishes from the bundle.
 pub(crate) const CHAT_SCRIPT: Asset = asset!("assets/chat.js");
@@ -26,6 +49,8 @@ fn router_with_assets(services: AppServices, assets: AssetBundle) -> Router {
     topcoat::router::module_router!()
         .app_context(services)
         .assets(assets)
+        .font(AMIRI)
+        .font(INTER)
         .build()
 }
 
@@ -38,6 +63,8 @@ fn router_with_assets(services: AppServices, assets: AssetBundle) -> Router {
 fn router_without_assets(services: AppServices) -> Router {
     topcoat::router::module_router!()
         .app_context(services)
+        .font(AMIRI)
+        .font(INTER)
         .build()
 }
 

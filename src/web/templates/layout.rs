@@ -23,6 +23,8 @@ pub(crate) async fn page_shell(styles: Asset, child: View) -> Result {
                     content="A source-grounded Hadith research assistant"
                 >
                 <title>"Hadith Assistant"</title>
+                topcoat::font::link(font: crate::web::AMIRI)
+                topcoat::font::link(font: crate::web::INTER)
                 <link rel="stylesheet" href=(styles)>
                 topcoat::dev::script()
             </head>
