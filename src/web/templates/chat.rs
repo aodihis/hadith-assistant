@@ -61,15 +61,27 @@ pub(crate) async fn chat_view() -> Result {
             <div class="chat-transcript" data-region="transcript" aria-live="polite"></div>
 
             <form class="chat-composer" data-region="composer">
-                <input
-                    id="chat-input"
-                    type="text"
-                    name="message"
-                    autocomplete="off"
-                    aria-label="Your question"
-                    placeholder="Ask about a topic from the narrations…"
-                >
-                <button class="button primary" type="submit" data-bind="send">"Ask"</button>
+                // Input and button share one bordered field rather than
+                // sitting side by side as two controls, so the composer reads
+                // as a single place to type.
+                <div class="chat-composer-field">
+                    <input
+                        id="chat-input"
+                        type="text"
+                        name="message"
+                        autocomplete="off"
+                        aria-label="Your question"
+                        placeholder="Ask about a topic from the narrations…"
+                    >
+                    <button
+                        class="chat-send"
+                        type="submit"
+                        data-bind="send"
+                        aria-label="Send"
+                    >
+                        <span aria-hidden="true" data-bind="send-icon">"↑"</span>
+                    </button>
+                </div>
             </form>
 
             <div class="chat-backdrop" data-region="backdrop" hidden=(true)></div>

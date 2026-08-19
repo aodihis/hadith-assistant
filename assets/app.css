@@ -615,26 +615,69 @@ body:has(.chat-app) {
 
 .chat-composer {
   flex: none;
-  display: flex;
-  gap: 0.6rem;
   width: min(100% - 2rem, 48rem);
   margin: 0 auto;
-  padding: 1rem 0 1.5rem;
+  padding: 0.75rem 0 1.25rem;
   background: linear-gradient(180deg, rgba(239, 231, 214, 0) 0%, var(--sanad-paper) 30%);
+}
+
+/* One field holding both controls, rather than a pill input beside a pill
+   button: the border belongs to the composer as a whole, so the send control
+   reads as part of the place you type instead of a second thing to aim at. */
+.chat-composer-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.3rem 0.3rem 0.9rem;
+  border: 1px solid rgba(38, 34, 27, 0.18);
+  border-radius: 1.15rem;
+  background: var(--sanad-surface);
+  box-shadow: 0 1px 2px rgba(38, 34, 27, 0.05);
+}
+
+/* The focus ring goes on the field, since the input inside it has no edge of
+   its own to draw one around. */
+.chat-composer-field:focus-within {
+  border-color: rgba(22, 74, 58, 0.45);
+  box-shadow: 0 0 0 3px rgba(22, 74, 58, 0.1);
 }
 
 .chat-composer input {
   flex: 1;
-  padding: 0.85rem 1.1rem;
-  border: 1px solid rgba(38, 34, 27, 0.2);
-  border-radius: 999px;
-  background: var(--sanad-surface);
+  min-width: 0;
+  padding: 0.5rem 0;
+  border: 0;
+  background: none;
+  color: inherit;
   font: inherit;
+  font-size: 0.95rem;
 }
 
-.chat-composer .button {
-  border-radius: 999px;
-  padding-inline: 1.4rem;
+.chat-composer input:focus {
+  outline: none;
+}
+
+.chat-send {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #f1e7d2;
+  background: var(--sanad-green);
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chat-send:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 .chat-backdrop {

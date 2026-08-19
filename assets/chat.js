@@ -21,6 +21,9 @@
   const composer = region("composer");
   const input = composer.querySelector("input");
   const sendButton = composer.querySelector('[data-bind="send"]');
+  // The glyph lives in its own span so the pending state can swap it without
+  // clearing the button's accessible name.
+  const sendIcon = composer.querySelector('[data-bind="send-icon"]');
   const drawer = region("drawer");
   const drawerBody = region("drawer-body");
   const backdrop = region("backdrop");
@@ -120,7 +123,7 @@
     state.pending = pending;
     input.disabled = pending;
     sendButton.disabled = pending;
-    sendButton.textContent = pending ? "…" : "Ask";
+    sendIcon.textContent = pending ? "…" : "↑";
   }
 
   async function ensureSession() {
