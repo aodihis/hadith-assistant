@@ -1,10 +1,15 @@
-# Hadith Assistant
+# Sanad
 
-Hadith Assistant is a full-stack Rust application for browsing canonical Hadith
-records and, eventually, answering questions with retrieval-augmented generation
-(RAG). [Topcoat](https://github.com/tokio-rs/topcoat) renders the web interface
-and serves the JSON API from one binary. PostgreSQL remains the source of truth,
-while Qdrant is reserved for a future citation-preserving retrieval index.
+Sanad is a full-stack Rust application for browsing canonical Hadith records and
+answering questions about them with retrieval-augmented generation (RAG), where
+every answer is cited back to the narrations it was built from. A *sanad* is the
+chain of transmission that supports a hadith, which is what the project is about.
+
+Hadith text, translations, and gradings come from [sunnah.com](https://sunnah.com/).
+
+[Topcoat](https://github.com/tokio-rs/topcoat) renders the web interface and
+serves the JSON API from one binary. PostgreSQL remains the source of truth, with
+Qdrant holding the citation-preserving retrieval index.
 
 Topcoat is intentionally early and experimental. This project currently targets
 Topcoat `0.5.x` and commits `Cargo.lock` so framework changes are adopted
@@ -90,8 +95,8 @@ assets, restarts the server, and reloads browser pages when source files change.
 To run without the development server, bundle assets first:
 
 ```bash
-topcoat asset bundle --bin hadith-assistant
-cargo run --bin hadith-assistant
+topcoat asset bundle --bin sanad
+cargo run --bin sanad
 ```
 
 Configuration is loaded from `.env`:

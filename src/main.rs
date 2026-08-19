@@ -1,6 +1,6 @@
-use hadith_assistant::application::AppServices;
-use hadith_assistant::config::Config;
-use hadith_assistant::web;
+use sanad::application::AppServices;
+use sanad::config::Config;
+use sanad::web;
 use sqlx::postgres::PgPoolOptions;
 use tracing_subscriber::EnvFilter;
 
@@ -46,8 +46,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// consequence of leaving it unset is that tokens issued before a restart stop
 /// being honoured. That is a visible, self-healing annoyance ("start a new
 /// chat") rather than a security hole, so it warns instead of refusing to boot.
-fn session_config() -> hadith_assistant::application::SessionConfig {
-    use hadith_assistant::application::SessionConfig;
+fn session_config() -> sanad::application::SessionConfig {
+    use sanad::application::SessionConfig;
 
     let secret = match std::env::var("SESSION_SECRET") {
         Ok(secret) if !secret.trim().is_empty() => secret.into_bytes(),

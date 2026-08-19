@@ -1,16 +1,14 @@
 use std::env;
 use std::process::ExitCode;
 
-use hadith_assistant::config::{EmbeddingConfig, VectorConfig};
-use hadith_assistant::domain::HadithSearch;
-use hadith_assistant::infrastructure::embedding::OpenAiEmbedder;
-use hadith_assistant::infrastructure::persistence::hadiths::HadithRepository;
-use hadith_assistant::infrastructure::vector::{QdrantVectorStore, VectorStore};
-use hadith_assistant::ingestion::embedding::embed_hadiths;
-use hadith_assistant::ingestion::hadith_json::{
-    ImportOptions, import_hadith_json, load_dump, validate_dump,
-};
-use hadith_assistant::ingestion::narrator_backfill::backfill_narrators;
+use sanad::config::{EmbeddingConfig, VectorConfig};
+use sanad::domain::HadithSearch;
+use sanad::infrastructure::embedding::OpenAiEmbedder;
+use sanad::infrastructure::persistence::hadiths::HadithRepository;
+use sanad::infrastructure::vector::{QdrantVectorStore, VectorStore};
+use sanad::ingestion::embedding::embed_hadiths;
+use sanad::ingestion::hadith_json::{ImportOptions, import_hadith_json, load_dump, validate_dump};
+use sanad::ingestion::narrator_backfill::backfill_narrators;
 use sqlx::postgres::PgPoolOptions;
 
 #[tokio::main]

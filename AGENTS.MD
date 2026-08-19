@@ -135,7 +135,7 @@ cargo test
 When browser assets or routes change, also run:
 
 ```bash
-topcoat asset bundle --bin hadith-assistant
+topcoat asset bundle --bin sanad
 ```
 
 Relevant tests should cover:

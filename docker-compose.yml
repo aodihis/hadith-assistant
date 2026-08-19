@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: hadith-assistant
+    container_name: sanad
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/hadiths
       DATABASE_MAX_CONNECTIONS: ${DATABASE_MAX_CONNECTIONS:-10}
@@ -25,7 +25,7 @@ services:
 
   postgres:
     image: postgres:17-alpine
-    container_name: hadith-assistant-postgres
+    container_name: sanad-postgres
     environment:
       POSTGRES_DB: hadiths
       POSTGRES_USER: postgres
@@ -45,7 +45,7 @@ services:
     build:
       context: .
       dockerfile: docker/qdrant/Dockerfile
-    container_name: hadith-assistant-qdrant
+    container_name: sanad-qdrant
     ports:
       - "6333:6333"
       - "6334:6334"

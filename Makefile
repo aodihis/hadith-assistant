@@ -6,8 +6,8 @@ dev: infra-up
 
 # Bundle browser assets, then run the application once on the host.
 run:
-	topcoat asset bundle --bin hadith-assistant
-	cargo run --bin hadith-assistant
+	topcoat asset bundle --bin sanad
+	cargo run --bin sanad
 
 # No explicit service names here on purpose: Compose decides which services
 # to start from active profiles alone, and it reads COMPOSE_PROFILES from
