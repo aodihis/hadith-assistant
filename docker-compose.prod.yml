@@ -44,7 +44,9 @@ services:
     restart: unless-stopped
 
   qdrant:
-    image: qdrant/qdrant:v1.15.1
+    # Pinned to match qdrant-client in Cargo.toml: the client refuses a server
+    # more than one minor version away, so this has to move with the crate.
+    image: qdrant/qdrant:v1.18.3
     networks:
       - sanad-internal
     volumes:
