@@ -20,9 +20,9 @@ pub(crate) async fn page_shell(styles: Asset, child: View) -> Result {
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <meta
                     name="description"
-                    content="A source-grounded Hadith research assistant"
+                    content="Search and ask across 44,896 hadith from 15 collections, each answer cited to its narration"
                 >
-                <title>"Hadith Assistant"</title>
+                <title>"Sanad · Ask the Sunnah"</title>
                 topcoat::font::link(font: crate::web::AMIRI)
                 topcoat::font::link(font: crate::web::INTER)
                 <link rel="stylesheet" href=(styles)>
@@ -43,17 +43,22 @@ pub(crate) async fn page_shell(styles: Asset, child: View) -> Result {
 pub(crate) async fn site_chrome(child: View) -> Result {
     view! {
         <header class="site-header">
-            <a class="brand" href="/">"Hadith Assistant"</a>
+            <a class="brand" href="/">
+                <span class="brand-mark" aria-hidden="true">"۞"</span>
+                "Sanad"
+            </a>
             <nav aria-label="Primary navigation">
                 <a href="/">"Home"</a>
-                <a href="/hadiths">"Browse Hadiths"</a>
-                <a href="/chat">"Chat"</a>
-                <a href="/api/health">"API health"</a>
+                <a href="/hadiths">"Browse"</a>
+                <a href="/chat">"Ask"</a>
             </nav>
         </header>
         (child)
         <footer>
-            "Canonical text remains in PostgreSQL. Every result preserves its source reference."
+            "Hadith text, translations, and gradings courtesy of "
+            <a href="https://sunnah.com/" rel="noopener">"sunnah.com"</a>
+            ". Every result keeps its source reference so it can be verified there. "
+            "A study companion for reflection, not a substitute for a qualified scholar."
         </footer>
     }
 }

@@ -95,10 +95,12 @@ pub(crate) async fn hadith_list_view(page: HadithPage) -> Result {
       site_chrome(
         <main>
             <section class="page-heading">
-                <p class="eyebrow">"Canonical records"</p>
-                <h1>"Browse Hadiths"</h1>
+                <p class="eyebrow">"The collections"</p>
+                <h1>"Browse the narrations"</h1>
                 <p>
-                    "Every record, filterable without changing or merging its canonical text."
+                    "Filter by collection, book, number, or grade. Every narration is "
+                    "shown as it was recorded, with the reference you need to look it "
+                    "up at its source."
                 </p>
             </section>
 

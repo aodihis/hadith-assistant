@@ -43,10 +43,18 @@ a {
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--green);
   font-family: var(--serif);
-  font-size: 1.25rem;
+  font-size: 1.3rem;
   font-weight: 700;
   text-decoration: none;
+}
+
+.brand-mark {
+  color: var(--gold);
 }
 
 nav {
@@ -167,6 +175,38 @@ h1 {
 .principles p {
   color: var(--muted);
   line-height: 1.6;
+}
+
+/* Attribution to sunnah.com, whose text this is. Given its own band rather
+   than a footer line: it is the answer to "where did this come from", which is
+   the first thing a reader should be able to check. */
+.credit {
+  max-width: 44rem;
+  padding: 4rem 0 1rem;
+}
+
+.credit h2 {
+  margin: 0 0 1rem;
+  font-size: clamp(1.8rem, 3.5vw, 2.6rem);
+  line-height: 1.15;
+}
+
+.credit p {
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.credit-thanks {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.credit-thanks a,
+footer a {
+  color: var(--green);
+  font-weight: 700;
+  text-underline-offset: 0.2rem;
 }
 
 .page-heading {
