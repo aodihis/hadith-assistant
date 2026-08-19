@@ -10,7 +10,7 @@ COPY migrations ./migrations
 # input like the source itself, not runtime data.
 COPY prompts ./prompts
 COPY build.rs ./
-RUN cargo build --locked --release --bin sanad
+RUN cargo build --locked --release --bin sanad --bin import_hadiths
 RUN topcoat asset bundle --release --bin sanad
 
 FROM debian:bookworm-slim AS runtime
@@ -20,6 +20,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/sanad /usr/local/bin/sanad
+# Shipped alongside the server so the import and embedding can be run as a
+# one-off container on the host, against the same database and vector store
+# the running app uses.
+COPY --from=builder /app/target/release/import_hadiths /usr/local/bin/import_hadiths
 COPY --from=builder /app/target/assets /usr/local/bin/assets
 
 # Topcoat binds 127.0.0.1 unless told otherwise, which inside a container means
