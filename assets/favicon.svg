@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Sanad">
+  <!-- The rub el hizb (۞) drawn as geometry rather than text: a favicon is
+       rendered outside the page, where the Amiri webfont is not available and
+       the glyph would fall back to whatever the system happens to have. -->
+  <rect width="32" height="32" rx="7" fill="#3f6248"/>
+  <g fill="#f1f0df">
+    <rect x="7" y="7" width="18" height="18"/>
+    <rect x="7" y="7" width="18" height="18" transform="rotate(45 16 16)"/>
+  </g>
+  <circle cx="16" cy="16" r="4" fill="#3f6248"/>
+</svg>

@@ -11,7 +11,7 @@ use topcoat::{
 /// so site furniture lives in `site_chrome`, which pages opt into, rather than
 /// here where a page cannot opt out.
 #[component]
-pub(crate) async fn page_shell(styles: Asset, child: View) -> Result {
+pub(crate) async fn page_shell(styles: Asset, favicon: Asset, child: View) -> Result {
     view! {
         <!DOCTYPE html>
         <html lang="en">
@@ -25,6 +25,7 @@ pub(crate) async fn page_shell(styles: Asset, child: View) -> Result {
                 <title>"Sanad · Ask the Sunnah"</title>
                 topcoat::font::link(font: crate::web::AMIRI)
                 topcoat::font::link(font: crate::web::INTER)
+                <link rel="icon" type="image/svg+xml" href=(favicon)>
                 <link rel="stylesheet" href=(styles)>
                 topcoat::dev::script()
             </head>

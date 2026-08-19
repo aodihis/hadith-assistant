@@ -15,6 +15,7 @@ use crate::application::AppServices;
 use templates::{home::home_view, layout::page_shell};
 
 const STYLES: Asset = asset!("assets/app.css");
+const FAVICON: Asset = asset!("assets/favicon.svg");
 
 /// Amiri covers both display roles: it is a classical naskh, so the headings
 /// and the hadith Arabic come from one family. The Arabic subset is requested
@@ -73,6 +74,7 @@ async fn root_layout(slot: Result) -> Result {
     view! {
         page_shell(
             styles: STYLES,
+            favicon: FAVICON,
             (slot?)
         )
     }
