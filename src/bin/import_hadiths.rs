@@ -42,10 +42,16 @@ async fn run() -> Result<(), String> {
     }
 
     if let Some(collection) = args.embed_collection.clone() {
-        let embedded = run_collection_embedding(&database_url, &collection, args.limit)
-            .await
-            .map_err(|error| error.to_string())?;
-        println!("embedded {embedded} records from collection `{collection}`");
+        let embedded =
+            run_collection_embedding(&database_url, &collection, args.limit, args.re_embed)
+                .await
+                .map_err(|error| error.to_string())?;
+        let verb = if args.re_embed {
+            "re-embedded"
+        } else {
+            "embedded"
+        };
+        println!("{verb} {embedded} records from collection `{collection}`");
         return Ok(());
     }
 
@@ -180,10 +186,16 @@ async fn run_embedding(database_url: &str, hadith_ids: &[i64]) -> Result<usize, 
 /// to build the vector index for a collection imported earlier. This reads
 /// canonical rows and writes only to Qdrant — it never inserts, updates, or
 /// deletes canonical data.
+///
+/// `re_embed` rebuilds vectors that already exist rather than skipping them,
+/// which is what a change to the text pipeline calls for: the canonical rows
+/// are unchanged, but the plain text derived from them is not. Embedding upserts
+/// by record id, so a rebuilt vector replaces its predecessor in place.
 async fn run_collection_embedding(
     database_url: &str,
     collection: &str,
     limit: Option<usize>,
+    re_embed: bool,
 ) -> Result<usize, String> {
     const PAGE_SIZE: i64 = 200;
 
@@ -235,11 +247,17 @@ async fn run_collection_embedding(
         }
         seen += page.len();
 
-        let ids: Vec<i64> = page.iter().map(|hadith| hadith.id).collect();
-        let already_indexed = vector_store
-            .existing_ids(&ids)
-            .await
-            .map_err(|error| error.to_string())?;
+        // Asking Qdrant which ids it holds is pointless when every one of them
+        // is going to be rewritten anyway, so a rebuild skips the round trip.
+        let already_indexed = if re_embed {
+            Default::default()
+        } else {
+            let ids: Vec<i64> = page.iter().map(|hadith| hadith.id).collect();
+            vector_store
+                .existing_ids(&ids)
+                .await
+                .map_err(|error| error.to_string())?
+        };
 
         let pending: Vec<_> = page
             .into_iter()
@@ -276,6 +294,7 @@ struct Args {
     embed: bool,
     embed_collection: Option<String>,
     limit: Option<usize>,
+    re_embed: bool,
     backfill_narrators: bool,
 }
 
@@ -287,6 +306,7 @@ impl Args {
         let mut embed = false;
         let mut embed_collection = None;
         let mut limit = None;
+        let mut re_embed = false;
         let mut backfill_narrators = false;
 
         let mut args = args.into_iter();
@@ -314,6 +334,9 @@ impl Args {
                     }
                     limit = Some(value);
                 }
+                "--re-embed" => {
+                    re_embed = true;
+                }
                 "--backfill-narrators" => {
                     backfill_narrators = true;
                 }
@@ -338,6 +361,14 @@ impl Args {
                     usage()
                 ));
             }
+        } else if re_embed && embed_collection.is_none() {
+            // Silently ignoring it would look like a rebuild had happened.
+            return Err(format!(
+                "--re-embed only applies to --embed-collection
+
+{}",
+                usage()
+            ));
         } else if embed_collection.is_some() {
             if json_path.is_some() {
                 return Err(format!(
@@ -356,6 +387,7 @@ impl Args {
             embed,
             embed_collection,
             limit,
+            re_embed,
             backfill_narrators,
         })
     }
@@ -368,7 +400,7 @@ fn require_value(args: &mut impl Iterator<Item = String>, name: &str) -> Result<
 }
 
 fn usage() -> String {
-    "usage: import_hadiths <json-path> [--database-url <url>] [--validate-only] [--embed]\n       import_hadiths --embed-collection <slug> [--database-url <url>] [--limit <n>]\n       import_hadiths --backfill-narrators [--database-url <url>]"
+    "usage: import_hadiths <json-path> [--database-url <url>] [--validate-only] [--embed]\n       import_hadiths --embed-collection <slug> [--database-url <url>] [--limit <n>] [--re-embed]\n       import_hadiths --backfill-narrators [--database-url <url>]"
         .to_owned()
 }
 
@@ -383,6 +415,27 @@ mod tests {
 
         assert!(args.embed);
         assert_eq!(args.json_path.as_deref(), Some("data/imports/hadiths.json"));
+    }
+
+    #[test]
+    fn parse_recognizes_the_re_embed_flag_alongside_a_collection() {
+        let args = Args::parse([
+            "--embed-collection".to_owned(),
+            "bukhari".to_owned(),
+            "--re-embed".to_owned(),
+        ])
+        .expect("valid arguments should parse");
+
+        assert!(args.re_embed);
+        assert_eq!(args.embed_collection.as_deref(), Some("bukhari"));
+    }
+
+    #[test]
+    fn re_embed_without_a_collection_is_rejected_rather_than_ignored() {
+        let error = Args::parse(["--re-embed".to_owned()])
+            .expect_err("--re-embed alone should not be accepted");
+
+        assert!(error.contains("--re-embed only applies to --embed-collection"));
     }
 
     #[test]

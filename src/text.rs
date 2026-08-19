@@ -14,7 +14,10 @@
 /// collapsing the result into clean prose.
 ///
 /// Block-level tags become paragraph breaks rather than vanishing, so sentences
-/// that the markup separated do not run together.
+/// that the markup separated do not run together. Newlines already present in
+/// the source are *not* breaks — they are the dump's hard wrapping, and across
+/// the corpus they fall mid-sentence far more often than at a sentence end — so
+/// they collapse to spaces like any other whitespace.
 pub fn to_plain_text(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len());
     let mut chars = raw.chars().peekable();
@@ -69,6 +72,10 @@ pub fn to_plain_text(raw: &str) -> String {
                     _ => "",
                 });
             }
+            // A newline in the source is a soft wrap, not a paragraph break:
+            // the dump hard-wraps its prose, so most of these land
+            // mid-sentence. Only the block tags above mark a real break.
+            '\n' | '\r' => out.push(' '),
             other => out.push(other),
         }
     }
@@ -77,6 +84,9 @@ pub fn to_plain_text(raw: &str) -> String {
 }
 
 /// Collapses runs of spaces and blank lines without joining separate paragraphs.
+///
+/// By this point the only newlines left are the ones [`to_plain_text`] inserted
+/// for block tags, so splitting on them recovers exactly the source paragraphs.
 fn collapse_whitespace(text: &str) -> String {
     let mut paragraphs: Vec<String> = Vec::new();
 
@@ -112,6 +122,26 @@ mod tests {
             to_plain_text(raw),
             "Narrated Ibn 'Umar:\nIslam is based on five principles:"
         );
+    }
+
+    #[test]
+    fn hard_wrapped_lines_rejoin_instead_of_becoming_separate_paragraphs() {
+        // The dump wraps prose at a fixed width and indents the continuation.
+        // Splitting on those newlines cut sentences in half mid-clause.
+        let raw = "Narrated Ibn `Abbas:\n<p>\n\n     One night I slept at the house of\n     Maimuna and the Prophet was there. He\n     performed ablution.";
+
+        assert_eq!(
+            to_plain_text(raw),
+            "Narrated Ibn `Abbas:\nOne night I slept at the house of Maimuna and the Prophet was there. He performed ablution."
+        );
+    }
+
+    #[test]
+    fn a_blank_line_is_not_treated_as_a_paragraph_break_either() {
+        // Blank lines split roughly evenly between sentence ends and
+        // mid-sentence across the corpus, so they are no more trustworthy than
+        // a single newline. Only markup decides where a paragraph ends.
+        assert_eq!(to_plain_text("he said\n\n     to them"), "he said to them");
     }
 
     #[test]

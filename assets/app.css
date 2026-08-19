@@ -277,7 +277,16 @@ h1 {
   line-height: 1.8;
 }
 
+/* The default 1em margin was set for a 1.0 line-height; at 1.8 it opens a gap
+   wider than the text is tall and the narration reads as separate quotes
+   rather than one continuous account. */
+.translation p {
+  margin: 0 0 0.7em;
+}
 
+.translation p:last-child {
+  margin-bottom: 0;
+}
 
 .grades {
   justify-content: flex-start;

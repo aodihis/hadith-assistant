@@ -54,11 +54,21 @@
   // About half the source records carry HTML in their text. DOMParser decodes
   // entities and drops tags without executing anything, and block elements
   // become line breaks so sentences the markup separated stay separated.
+  //
+  // Newlines already in the source are hard wrapping, not structure: across the
+  // corpus they land mid-sentence far more often than at a sentence end. They
+  // are flattened out of the text nodes first, so the only newlines left to
+  // split on are the ones the block tags introduce. Mirrors `to_plain_text` in
+  // src/text.rs; the two must agree on what counts as a paragraph.
   function plainText(raw) {
     if (!raw) return "";
-    if (!raw.includes("<") && !raw.includes("&")) return raw.trim();
+    if (!raw.includes("<") && !raw.includes("&")) return raw.replace(/\s+/g, " ").trim();
 
     const doc = new DOMParser().parseFromString(raw, "text/html");
+    const text = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+    for (let node = text.nextNode(); node; node = text.nextNode()) {
+      node.textContent = node.textContent.replace(/\s+/g, " ");
+    }
     for (const node of doc.body.querySelectorAll("p, br, div, li, tr, h1, h2, h3")) {
       node.before("\n");
     }

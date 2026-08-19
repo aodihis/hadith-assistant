@@ -206,8 +206,15 @@ pub(crate) async fn hadith_list_view(page: HadithPage) -> Result {
                             </p>
                             if let Some(english_text) = hadith.english_text {
                                 // The stored record keeps its source markup;
-                                // only the rendering is cleaned.
-                                <p class="translation">(to_plain_text(&english_text))</p>
+                                // only the rendering is cleaned. `to_plain_text`
+                                // returns one line per source paragraph, so each
+                                // gets its own <p> — folded into a single one
+                                // they would render as a wall of run-on prose.
+                                <div class="translation">
+                                    for paragraph in to_plain_text(&english_text).lines() {
+                                        <p>(paragraph)</p>
+                                    }
+                                </div>
                             }
                             <div class="grades">
                                 <span>
