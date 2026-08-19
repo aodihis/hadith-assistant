@@ -1,0 +1,54 @@
+# Production stack for sanad.aodihis.com.
+#
+# Ingress is Traefik on the shared `traefik` network, exactly as the other apps
+# on this VPS do it. Postgres is expected to already be running and reachable on
+# `shared-network`, so it is not declared here — DATABASE_URL points at it.
+#
+# Qdrant, by contrast, is owned by this stack: nothing else uses it, and its
+# index is derived data that belongs to this app. It sits on a private network
+# so its unauthenticated API is not exposed to anything else on the box.
+
+networks:
+  traefik:
+    external: true
+  shared-network:
+    external: true
+  sanad-internal:
+    driver: bridge
+
+volumes:
+  qdrant-storage:
+
+services:
+  server:
+    image: ghcr.io/aodihis/hadith-assistant:latest
+    networks:
+      - traefik
+      - shared-network
+      - sanad-internal
+    env_file: .env
+    depends_on:
+      - qdrant
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.sanad.rule=Host(`${APP_HOST}`)"
+      - "traefik.http.routers.sanad.entrypoints=websecure"
+      - "traefik.http.routers.sanad.tls.certresolver=letsencrypt"
+      # Matches EXPOSE/PORT in the Dockerfile. Topcoat serves on 3000, not 8080.
+      - "traefik.http.services.sanad.loadbalancer.server.port=3000"
+      - "traefik.http.routers.sanad-http.rule=Host(`${APP_HOST}`)"
+      - "traefik.http.routers.sanad-http.entrypoints=web"
+      - "traefik.http.routers.sanad-http.middlewares=sanad-https"
+      - "traefik.http.middlewares.sanad-https.redirectscheme.scheme=https"
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.15.1
+    networks:
+      - sanad-internal
+    volumes:
+      - qdrant-storage:/qdrant/storage
+    # No ports published: the app reaches it over the private network by
+    # service name, and Qdrant has no auth enabled.
+    restart: unless-stopped

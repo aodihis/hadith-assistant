@@ -1,7 +1,7 @@
 FROM rust:1.96-bookworm AS builder
 
 WORKDIR /app
-RUN cargo install topcoat-cli --version 0.4.0 --locked
+RUN cargo install topcoat-cli --version 0.5.0 --locked
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY assets ./assets
@@ -18,6 +18,11 @@ RUN apt-get update \
 
 COPY --from=builder /app/target/release/sanad /usr/local/bin/sanad
 COPY --from=builder /app/target/assets /usr/local/bin/assets
+
+# Topcoat binds 127.0.0.1 unless told otherwise, which inside a container means
+# nothing outside it can reach the app — including the reverse proxy.
+ENV HOST=0.0.0.0
+ENV PORT=3000
 
 EXPOSE 3000
 CMD ["sanad"]
