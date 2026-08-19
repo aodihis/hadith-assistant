@@ -6,6 +6,9 @@ COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY assets ./assets
 COPY migrations ./migrations
+# The system prompts are include_str!'d into the binary, so they are a build
+# input like the source itself, not runtime data.
+COPY prompts ./prompts
 COPY build.rs ./
 RUN cargo build --locked --release --bin sanad
 RUN topcoat asset bundle --release --bin sanad
