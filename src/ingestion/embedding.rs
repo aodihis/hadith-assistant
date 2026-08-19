@@ -54,11 +54,44 @@ pub async fn embed_hadiths(
 fn hadith_embedding_text(hadith: &Hadith) -> String {
     let arabic = to_plain_text(&hadith.arabic_text);
 
-    match &hadith.english_text {
+    let full = match &hadith.english_text {
         Some(english_text) if !english_text.trim().is_empty() => {
             format!("{}\n{}", arabic, to_plain_text(english_text))
         }
         _ => arabic,
+    };
+
+    truncate_for_embedding(full)
+}
+
+/// Upper bound on the characters handed to the embedding provider.
+///
+/// The provider rejects any input over 8192 tokens, and it rejects the whole
+/// request rather than the offending element — so one long narration used to
+/// fail its entire batch of 96 and halt the run partway through a collection.
+///
+/// Arabic tokenizes at worst near one token per character, so this leaves
+/// headroom under that ceiling. Around 90 of the corpus's records are long
+/// enough to be affected; they are shortened for the vector only, and the
+/// canonical text they are shown from is untouched.
+const EMBEDDING_MAX_CHARS: usize = 6_000;
+
+/// Cuts `text` to [`EMBEDDING_MAX_CHARS`], preferring a word boundary.
+///
+/// Slicing has to land on a character boundary or it panics on the multi-byte
+/// Arabic this corpus is mostly made of, so the cut is found by character
+/// rather than by byte offset.
+fn truncate_for_embedding(text: String) -> String {
+    let Some((cut, _)) = text.char_indices().nth(EMBEDDING_MAX_CHARS) else {
+        return text;
+    };
+
+    let head = &text[..cut];
+    match head.rfind(char::is_whitespace) {
+        // Ignore a boundary so early that it would throw away most of the
+        // budget; a mid-word cut costs less than half the text.
+        Some(space) if space > cut / 2 => head[..space].to_owned(),
+        _ => head.to_owned(),
     }
 }
 
@@ -161,5 +194,46 @@ mod tests {
 
         assert_eq!(embedded, 0);
         assert!(vector_store.upsert_calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn text_within_the_budget_is_left_alone() {
+        let text = "Narrated Abu Hurayra: a short narration.".to_owned();
+
+        assert_eq!(truncate_for_embedding(text.clone()), text);
+    }
+
+    #[test]
+    fn overlong_text_is_cut_to_the_budget() {
+        let text = "word ".repeat(4_000);
+
+        let truncated = truncate_for_embedding(text);
+
+        assert!(truncated.chars().count() <= EMBEDDING_MAX_CHARS);
+        // Cut at a space, so the vector is not built from half a word.
+        assert!(truncated.ends_with("word"));
+    }
+
+    /// A byte-offset slice would panic here: Arabic is multi-byte throughout,
+    /// so the budget almost never lands on a character boundary.
+    #[test]
+    fn overlong_arabic_is_cut_without_panicking() {
+        let text = "بسم الله الرحمن الرحيم ".repeat(1_000);
+
+        let truncated = truncate_for_embedding(text);
+
+        assert!(truncated.chars().count() <= EMBEDDING_MAX_CHARS);
+        assert!(!truncated.is_empty());
+    }
+
+    /// Unbroken text has no whitespace to back off to; it still has to be cut
+    /// rather than sent whole.
+    #[test]
+    fn text_with_no_whitespace_is_still_cut() {
+        let text = "ا".repeat(20_000);
+
+        let truncated = truncate_for_embedding(text);
+
+        assert_eq!(truncated.chars().count(), EMBEDDING_MAX_CHARS);
     }
 }
