@@ -43,6 +43,27 @@ services:
       - "traefik.http.middlewares.sanad-https.redirectscheme.scheme=https"
     restart: unless-stopped
 
+  # One-off maintenance runs: the import and the embedding passes.
+  #
+  # A separate service rather than `compose run server`, because a one-off run
+  # inherits the service's labels — including traefik.enable — and joins the
+  # traefik network. Traefik then load balances public traffic across the real
+  # server and a container running the importer, which serves no HTTP at all,
+  # so roughly half of all requests fail until the run finishes. It also breaks
+  # certificate renewal, since the ACME challenge is answered the same way.
+  #
+  # Not started by `up`: it belongs to a profile, so it only runs when named.
+  importer:
+    image: ghcr.io/aodihis/hadith-assistant:latest
+    profiles:
+      - tools
+    networks:
+      - shared-network
+      - sanad-internal
+    env_file: .env
+    entrypoint: ["import_hadiths"]
+    restart: "no"
+
   qdrant:
     # Pinned to match qdrant-client in Cargo.toml: the client refuses a server
     # more than one minor version away, so this has to move with the crate.
