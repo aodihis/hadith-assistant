@@ -570,9 +570,12 @@ body:has(.chat-app) {
   margin: 0 auto 2.5rem;
 }
 
+/* A column, not a row: a staged narration reference stacks above the bubble
+   rather than sitting beside it. */
 .chat-question {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
   margin-bottom: 1.25rem;
 }
 
@@ -658,6 +661,93 @@ body:has(.chat-app) {
 .chat-card .arabic {
   margin: 1rem 0;
   font-size: clamp(1.2rem, 2.4vw, 1.6rem);
+}
+
+/* A citation card opens collapsed: the translation is what most readers scan,
+   and several cards carrying full Arabic plus full English push the answer
+   they support off the screen. */
+.chat-narration.is-collapsed .arabic {
+  display: none;
+}
+
+.chat-narration.is-collapsed .translation {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.chat-expand {
+  margin-top: 0.5rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--green-deep);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-underline-offset: 0.2rem;
+  text-decoration: underline;
+}
+
+/* The narration staged for the next question, sitting above the field the way
+   a reply preview sits above a message box. The left bar is what makes it read
+   as a quotation rather than as a banner. */
+.chat-reply {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+  padding: 0.5rem 0.6rem 0.5rem 0.8rem;
+  border-left: 3px solid var(--sage);
+  background: var(--surface);
+}
+
+.chat-reply-body {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-reply-label {
+  margin-right: 0.4rem;
+  color: var(--accent);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.7rem;
+}
+
+.chat-reply-clear {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* Carried into the transcript so a turn still shows which narration it was
+   about once the composer has been cleared. It is a sibling of the question
+   bubble, so the bubble's styling has to be undone rather than inherited. */
+.chat-question .chat-question-ref {
+  max-width: 80%;
+  margin: 0 0 0.35rem;
+  padding: 0;
+  color: var(--muted);
+  background: none;
+  font-size: 0.72rem;
 }
 
 .chat-composer {

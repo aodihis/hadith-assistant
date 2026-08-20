@@ -57,6 +57,24 @@ pub(crate) async fn chat_view() -> Result {
             <div class="chat-transcript" data-region="transcript" aria-live="polite"></div>
 
             <form class="chat-composer" data-region="composer">
+                // Staged narration, shown above the field the way a reply
+                // preview sits above a message box. Populated by chat.js when
+                // a citation card's "Ask about this" is used.
+                <div class="chat-reply" data-region="reply" hidden=(true)>
+                    <span class="chat-reply-body">
+                        <span class="chat-reply-label">"Asking about"</span>
+                        <span data-bind="reply-ref"></span>
+                    </span>
+                    <button
+                        class="chat-reply-clear"
+                        type="button"
+                        data-action="clear-reply"
+                        aria-label="Remove the staged narration"
+                    >
+                        "×"
+                    </button>
+                </div>
+
                 // Input and button share one bordered field rather than
                 // sitting side by side as two controls, so the composer reads
                 // as a single place to type.

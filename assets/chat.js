@@ -28,12 +28,21 @@
   const drawerBody = region("drawer-body");
   const backdrop = region("backdrop");
   const toastEl = region("toast");
+  const replyEl = region("reply");
+  const replyRef = composer.querySelector('[data-bind="reply-ref"]');
 
   const state = {
     token: null,
     history: null,
     transcript: [],
     pending: false,
+    // Which citation cards are showing their full text. Held here rather than
+    // read off the DOM because `repaint` rebuilds every card from scratch on
+    // each streamed delta, which would otherwise collapse a card the reader
+    // had just opened.
+    expanded: new Set(),
+    // The narration staged for the next question, or null.
+    replyTo: null,
   };
 
   // ---------------------------------------------------------------- helpers
@@ -145,25 +154,96 @@
     if (grade) meta.append(el("span", "chat-grade", grade));
     card.append(meta);
 
-    appendNarrationText(card, hadith);
+    // Collapsed by default: a card carrying the full Arabic and the full
+    // translation crowds out the answer it is supporting, and several of them
+    // in one turn push it off screen entirely. The translation is what most
+    // readers scan, so that is what stays visible.
+    const open = state.expanded.has(hadith.hadith_id);
+    const body = el("div", open ? "chat-narration" : "chat-narration is-collapsed");
+    appendNarrationText(body, hadith);
+    card.append(body);
+
+    const toggle = el("button", "chat-expand", open ? "Show less" : "Show full text");
+    toggle.type = "button";
+    toggle.dataset.action = "toggle-text";
+    toggle.setAttribute("aria-expanded", String(open));
+    card.append(toggle);
 
     const foot = el("div", "chat-card-foot");
     if (hadith.narrator) {
       foot.append(el("span", null, `Narrated by ${hadith.narrator.name}`));
     }
-    const open = el("button", "chat-link", "View & related →");
-    open.type = "button";
-    open.dataset.action = "open-hadith";
-    foot.append(open);
+
+    const reply = el("button", "chat-link", "↩ Ask about this");
+    reply.type = "button";
+    reply.dataset.action = "reply-hadith";
+    foot.append(reply);
+
+    const view = el("button", "chat-link", "View & related →");
+    view.type = "button";
+    view.dataset.action = "open-hadith";
+    foot.append(view);
 
     card.append(foot);
     return card;
+  }
+
+  /// Reference shown on a staged narration and on the turn it produced.
+  function hadithRef(hadith) {
+    return `${hadith.collection} · Book ${hadith.book_number} · Hadith ${hadith.hadith_number}`;
+  }
+
+  function toggleText(id, button) {
+    const card = button.closest(".chat-card");
+    const body = card && card.querySelector(".chat-narration");
+    if (!body) return;
+
+    const open = body.classList.toggle("is-collapsed") === false;
+    if (open) state.expanded.add(id);
+    else state.expanded.delete(id);
+
+    button.textContent = open ? "Show less" : "Show full text";
+    button.setAttribute("aria-expanded", String(open));
+  }
+
+  function stageReply(id) {
+    const hadith = findHadith(id);
+    if (!hadith) return;
+
+    state.replyTo = {
+      hadith_id: id,
+      collection: hadith.collection,
+      book_number: hadith.book_number,
+      hadith_number: hadith.hadith_number,
+    };
+    renderReply();
+    input.focus();
+  }
+
+  function clearReply() {
+    state.replyTo = null;
+    renderReply();
+  }
+
+  function renderReply() {
+    if (!state.replyTo) {
+      replyEl.hidden = true;
+      replyRef.textContent = "";
+      return;
+    }
+    replyRef.textContent = hadithRef(state.replyTo);
+    replyEl.hidden = false;
   }
 
   function renderTurn(turn) {
     const wrap = el("div", "chat-turn");
 
     const question = el("div", "chat-question");
+    if (turn.replyTo) {
+      // Kept beside the question so the transcript still shows which narration
+      // was being asked about after the composer has been cleared.
+      question.append(el("p", "chat-question-ref", `↩ ${hadithRef(turn.replyTo)}`));
+    }
     question.append(el("p", null, turn.question));
     wrap.append(question);
 
@@ -248,8 +328,14 @@
     setPending(true);
     input.value = "";
 
+    // The staged narration rides along on the turn so the transcript can show
+    // it, and the composer is cleared either way. It is not sent to the server
+    // yet: how a narration should shape the answer is still to be decided.
+    const replyTo = state.replyTo;
+    clearReply();
+
     // Shown immediately; committed to history only when `memory` arrives.
-    const turn = { question, title: "", text: "", citations: [], refused: false };
+    const turn = { question, title: "", text: "", citations: [], refused: false, replyTo };
     state.transcript.push(turn);
     repaint();
 
@@ -386,6 +472,15 @@
     switch (action.dataset.action) {
       case "open-hadith":
         openDrawer(id);
+        break;
+      case "toggle-text":
+        toggleText(id, action);
+        break;
+      case "reply-hadith":
+        stageReply(id);
+        break;
+      case "clear-reply":
+        clearReply();
         break;
       case "close-drawer":
         closeOverlays();
