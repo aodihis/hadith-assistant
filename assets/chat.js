@@ -140,9 +140,12 @@
     }
   }
 
-  function citationCard(hadith) {
+  function citationCard(hadith, turnIndex) {
     const card = el("article", "chat-card");
     card.dataset.hadithId = String(hadith.hadith_id);
+    // Keyed by turn as well as narration, so opening a card does not open
+    // every later citation of the same narration.
+    const key = `${turnIndex}:${hadith.hadith_id}`;
 
     const meta = el("div", "chat-card-meta");
     meta.append(el("span", "collection", hadith.collection_name || hadith.collection));
@@ -158,7 +161,7 @@
     // translation crowds out the answer it is supporting, and several of them
     // in one turn push it off screen entirely. The translation is what most
     // readers scan, so that is what stays visible.
-    const open = state.expanded.has(hadith.hadith_id);
+    const open = state.expanded.has(key);
     const body = el("div", open ? "chat-narration" : "chat-narration is-collapsed");
     appendNarrationText(body, hadith);
     card.append(body);
@@ -166,6 +169,7 @@
     const toggle = el("button", "chat-expand", open ? "Show less" : "Show full text");
     toggle.type = "button";
     toggle.dataset.action = "toggle-text";
+    toggle.dataset.expandKey = key;
     toggle.setAttribute("aria-expanded", String(open));
     card.append(toggle);
 
@@ -204,6 +208,16 @@
   // the failure is visible instead of pointing somewhere wrong.
   const CITATION = /\[(\d+)\]/g;
 
+  /// Which markers in `text` resolve to a retrieved narration.
+  function resolvedCitations(text, citations) {
+    const found = new Set();
+    for (const match of (text || "").matchAll(CITATION)) {
+      const index = Number(match[1]) - 1;
+      if (citations[index]) found.add(index);
+    }
+    return found;
+  }
+
   function appendAnswerText(parent, text, citations) {
     for (const paragraph of (text || "").split("\n")) {
       const trimmed = paragraph.trim();
@@ -216,6 +230,12 @@
         const hadith = citations[Number(match[1]) - 1];
         const before = trimmed.slice(last, match.index);
         if (before) p.append(document.createTextNode(before));
+
+        // `[1][2]` arrives with nothing between the markers, which renders as
+        // two references run together. They are a list, so they read as one.
+        if (!before && p.lastChild && p.lastChild.classList?.contains("chat-cite")) {
+          p.append(document.createTextNode(", "));
+        }
 
         if (hadith) {
           const cite = el("button", "chat-cite", hadithRef(hadith));
@@ -239,14 +259,15 @@
     }
   }
 
-  function toggleText(id, button) {
+  function toggleText(button) {
     const card = button.closest(".chat-card");
     const body = card && card.querySelector(".chat-narration");
-    if (!body) return;
+    const key = button.dataset.expandKey;
+    if (!body || !key) return;
 
     const open = body.classList.toggle("is-collapsed") === false;
-    if (open) state.expanded.add(id);
-    else state.expanded.delete(id);
+    if (open) state.expanded.add(key);
+    else state.expanded.delete(key);
 
     button.textContent = open ? "Show less" : "Show full text";
     button.setAttribute("aria-expanded", String(open));
@@ -281,7 +302,7 @@
     replyEl.hidden = false;
   }
 
-  function renderTurn(turn) {
+  function renderTurn(turn, index) {
     const wrap = el("div", "chat-turn");
 
     const question = el("div", "chat-question");
@@ -304,7 +325,13 @@
       answer.classList.add("is-refusal");
     }
 
-    if (turn.citations && turn.citations.length) {
+    // Cards are the fallback, not the default. Where the answer cites inline,
+    // every narration it used is already named in the prose and one click from
+    // being read in full, so repeating them underneath as cards buries the
+    // answer under the sources it is built from.
+    const citedInline = resolvedCitations(turn.text, turn.citations || []).size > 0;
+
+    if (turn.citations && turn.citations.length && !citedInline) {
       const label = el(
         "p",
         "chat-cite-label",
@@ -312,7 +339,7 @@
       );
       answer.append(label);
       const list = el("div", "chat-cards");
-      for (const hadith of turn.citations) list.append(citationCard(hadith));
+      for (const hadith of turn.citations) list.append(citationCard(hadith, index));
       answer.append(list);
     }
 
@@ -320,12 +347,29 @@
     return wrap;
   }
 
-  function repaint() {
+  // How close to the bottom still counts as following along.
+  const FOLLOW_THRESHOLD_PX = 120;
+
+  function atBottom() {
+    const distance =
+      transcriptEl.scrollHeight - transcriptEl.scrollTop - transcriptEl.clientHeight;
+    return distance < FOLLOW_THRESHOLD_PX;
+  }
+
+  // `force` scrolls regardless; used when the reader has just sent a question,
+  // where jumping to it is the point.
+  function repaint(force) {
+    // Read before replacing the children, since that resets the scroll offset.
+    // An answer streams dozens of repaints, and scrolling on each of them made
+    // it impossible to read back through the transcript while one arrived —
+    // every keystroke of the model's yanked the view back down.
+    const follow = force || atBottom();
+
     transcriptEl.replaceChildren();
-    for (const turn of state.transcript) transcriptEl.append(renderTurn(turn));
+    state.transcript.forEach((turn, i) => transcriptEl.append(renderTurn(turn, i)));
     app.dataset.chatState = state.transcript.length ? "active" : "empty";
-    transcriptEl.scrollTop = transcriptEl.scrollHeight;
-    app.scrollTop = app.scrollHeight;
+
+    if (follow) transcriptEl.scrollTop = transcriptEl.scrollHeight;
   }
 
   // ---------------------------------------------------------------- streaming
@@ -380,7 +424,9 @@
     // Shown immediately; committed to history only when `memory` arrives.
     const turn = { question, title: "", text: "", citations: [], refused: false, replyTo };
     state.transcript.push(turn);
-    repaint();
+    // Forced: the reader just asked, so showing them their own question is
+    // what they expect, wherever they had scrolled to.
+    repaint(true);
 
     try {
       const token = await ensureSession();
@@ -517,7 +563,7 @@
         openDrawer(id);
         break;
       case "toggle-text":
-        toggleText(id, action);
+        toggleText(action);
         break;
       case "reply-hadith":
         stageReply(id);

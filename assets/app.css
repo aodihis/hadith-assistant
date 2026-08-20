@@ -689,6 +689,15 @@ body:has(.chat-app) {
   font-size: clamp(1.2rem, 2.4vw, 1.6rem);
 }
 
+/* The drawer is a fixed ~31rem column, so the viewport-relative size the page
+   uses overflows it. Fixed at 1.125rem, with the leading Amiri's diacritics
+   need at that size. */
+.chat-drawer-body .arabic {
+  margin: 1rem 0;
+  font-size: 1.125rem;
+  line-height: 2.2;
+}
+
 /* A citation card opens collapsed: the translation is what most readers scan,
    and several cards carrying full Arabic plus full English push the answer
    they support off the screen. */
