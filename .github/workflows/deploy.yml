@@ -72,6 +72,10 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
           OPEN_ROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY }}
+          # Optional. Set either to point chat and embedding at different
+          # providers; each falls back to OPEN_ROUTER_API_KEY when unset.
+          CHAT_API_KEY: ${{ secrets.CHAT_API_KEY }}
+          EMBEDDING_API_KEY: ${{ secrets.EMBEDDING_API_KEY }}
           EMBEDDING_BASE_URL: ${{ vars.EMBEDDING_BASE_URL }}
           EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL }}
           CHAT_BASE_URL: ${{ vars.CHAT_BASE_URL }}
@@ -95,6 +99,8 @@ jobs:
             "DATABASE_URL=$DATABASE_URL" \
             "SESSION_SECRET=$SESSION_SECRET" \
             "OPEN_ROUTER_API_KEY=$OPEN_ROUTER_API_KEY" \
+            "CHAT_API_KEY=$CHAT_API_KEY" \
+            "EMBEDDING_API_KEY=$EMBEDDING_API_KEY" \
             "VECTOR_DB_PROVIDER=qdrant" \
             "QDRANT_URL=http://qdrant:6334" \
             "QDRANT_COLLECTION=${QDRANT_COLLECTION:-hadith_vectors}" \

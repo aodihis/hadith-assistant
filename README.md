@@ -110,7 +110,9 @@ Configuration is loaded from `.env`:
 | `VECTOR_DB_PROVIDER` | no | `qdrant` | Selected vector backend |
 | `QDRANT_URL` | no | `http://localhost:6334` | Qdrant gRPC endpoint (`qdrant-client` speaks gRPC, not REST — port 6333 is REST-only and will not work here) |
 | `QDRANT_COLLECTION` | no | `hadith_vectors` | Qdrant collection name |
-| `OPEN_ROUTER_API_KEY` | no | — | Bearer token shared by the embedding and chat-completion clients; required to actually call retrieval, `import_hadiths --embed`, or answer generation |
+| `OPEN_ROUTER_API_KEY` | no | — | Bearer token used by the embedding and chat-completion clients unless one is set below; required to actually call retrieval, `import_hadiths --embed`, or answer generation |
+| `CHAT_API_KEY` | no | `OPEN_ROUTER_API_KEY` | Bearer token for the chat-completion client alone; set it to point chat at a different provider from embedding |
+| `EMBEDDING_API_KEY` | no | `OPEN_ROUTER_API_KEY` | Bearer token for the embedding client alone |
 | `EMBEDDING_BASE_URL` | no | `https://api.openai.com/v1` | Embeddings API base URL |
 | `EMBEDDING_MODEL` | no | `text-embedding-3-small` | Embedding model name |
 | `CHAT_BASE_URL` | no | `https://openrouter.ai/api/v1` | Chat-completion API base URL |

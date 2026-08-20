@@ -138,7 +138,7 @@ impl EmbeddingConfig {
         Self {
             base_url: env::var("EMBEDDING_BASE_URL")
                 .unwrap_or_else(|_| "https://api.openai.com/v1".to_owned()),
-            api_key: env::var("OPEN_ROUTER_API_KEY").ok(),
+            api_key: provider_key("EMBEDDING_API_KEY"),
             model: env::var("EMBEDDING_MODEL")
                 .unwrap_or_else(|_| "text-embedding-3-small".to_owned()),
         }
@@ -165,7 +165,7 @@ impl ChatConfig {
         Ok(Self {
             base_url: env::var("CHAT_BASE_URL")
                 .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_owned()),
-            api_key: env::var("OPEN_ROUTER_API_KEY").ok(),
+            api_key: provider_key("CHAT_API_KEY"),
             model,
             summary_model,
             temperature,
@@ -178,6 +178,17 @@ impl ChatConfig {
             max_question_chars,
         })
     }
+}
+
+/// Reads the key for one provider, falling back to the shared one.
+///
+/// Chat and embedding were a single key because both went to OpenRouter. They
+/// need not: chat can be pointed straight at a provider while embedding stays
+/// where the index was built — and it has to, since not every chat provider
+/// serves embeddings at all. The fallback keeps a deployment that sets only
+/// OPEN_ROUTER_API_KEY working unchanged.
+fn provider_key(name: &str) -> Option<String> {
+    non_empty_var(name).or_else(|| non_empty_var("OPEN_ROUTER_API_KEY"))
 }
 
 /// Reads a variable, treating blank as absent.
@@ -419,6 +430,27 @@ mod tests {
         }
 
         assert_eq!(config.api_key.as_deref(), Some("test-shared-key"));
+    }
+
+    /// Pointing chat at one provider and embedding at another is the reason
+    /// these are separable; the shared key must still serve whichever is left
+    /// unset, or splitting one would silently unauthenticate the other.
+    #[test]
+    fn a_provider_key_overrides_the_shared_one_without_disturbing_the_other() {
+        // SAFETY: test runs single-threaded within this process's env.
+        unsafe {
+            std::env::set_var("OPEN_ROUTER_API_KEY", "test-shared-key");
+            std::env::set_var("CHAT_API_KEY", "test-chat-key");
+        }
+        let chat = ChatConfig::from_env().expect("defaults are valid");
+        let embedding = EmbeddingConfig::from_env();
+        unsafe {
+            std::env::remove_var("OPEN_ROUTER_API_KEY");
+            std::env::remove_var("CHAT_API_KEY");
+        }
+
+        assert_eq!(chat.api_key.as_deref(), Some("test-chat-key"));
+        assert_eq!(embedding.api_key.as_deref(), Some("test-shared-key"));
     }
 
     #[test]
