@@ -141,6 +141,36 @@ impl HadithRepository {
         Ok(hadiths)
     }
 
+    /// Finds the narrations a canonical citation names.
+    ///
+    /// Matches a suffixed number as well as a bare one. Muslim numbers the
+    /// variants of one report "1907 a", "1907 b", and a citation of "Sahih
+    /// Muslim 1907" means all of them — 85% of that collection carries such a
+    /// suffix, and 16% of the corpus does, so matching exactly finds nothing
+    /// for most of the collection people cite most.
+    ///
+    /// `hadith_number` reaches here only from the reference parser, which
+    /// accepts nothing but ASCII digits, so it carries no LIKE metacharacters.
+    pub async fn find_by_citation(
+        &self,
+        collection: &str,
+        hadith_number: &str,
+        limit: i64,
+    ) -> Result<Vec<Hadith>, AppError> {
+        let hadiths = sqlx::query_as::<_, Hadith>(&format!(
+            "{HADITH_SELECT} WHERE c.slug = $1 \
+             AND (h.hadith_number = $2 OR h.hadith_number LIKE $2 || ' %') \
+             ORDER BY h.hadith_number, h.id LIMIT $3"
+        ))
+        .bind(collection)
+        .bind(hadith_number)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(hadiths)
+    }
+
     pub async fn find_by_reference(
         &self,
         collection: &str,

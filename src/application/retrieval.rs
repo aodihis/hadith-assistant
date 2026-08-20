@@ -140,18 +140,12 @@ impl RetrievalService {
         &self,
         reference: &crate::application::reference::HadithReference,
     ) -> Result<Vec<RetrievedHadith>, AppError> {
+        // Three, because a citation can name several records: Muslim numbers
+        // the variants of one report "1907 a", "1907 b", and citing 1907 means
+        // all of them.
         let hadiths = self
             .hadiths
-            .list(&crate::domain::HadithSearch {
-                collection: Some(reference.collection.clone()),
-                book_number: None,
-                hadith_number: Some(reference.hadith_number.clone()),
-                grade: None,
-                // A number can repeat across books within one collection, and
-                // all of them are the reference the reader gave.
-                limit: 3,
-                offset: 0,
-            })
+            .find_by_citation(&reference.collection, &reference.hadith_number, 3)
             .await?;
 
         if hadiths.is_empty() {
