@@ -721,6 +721,13 @@ body:has(.chat-app) {
 /* The narration staged for the next question, sitting above the field the way
    a reply preview sits above a message box. The left bar is what makes it read
    as a quotation rather than as a banner. */
+/* `display` here beats the `hidden` attribute, which is only a UA rule of
+   `display: none`. Without this the staged-narration strip is visible on load
+   and after clearing, showing "Asking about" with nothing beside it. */
+.chat-reply[hidden] {
+  display: none;
+}
+
 .chat-reply {
   display: flex;
   align-items: center;

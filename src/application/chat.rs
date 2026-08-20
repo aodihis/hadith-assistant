@@ -503,6 +503,7 @@ impl ReplyAssembler {
             // is complete rather than truncated, so classify it as if one had.
             let buffered = std::mem::take(&mut self.buffer);
             if buffered.trim().is_empty() {
+                tracing::warn!("the model returned an empty reply");
                 return (events, None);
             }
             events = self.classify(&buffered, "");
@@ -525,7 +526,17 @@ impl ReplyAssembler {
             // A header with no prose behind it is a truncated turn, not an
             // answer. Any events classify() just produced are dropped with it,
             // so citations are never released for a turn that then fails.
-            Some(Kind::Answer) if self.body.trim().is_empty() => (Vec::new(), None),
+            Some(Kind::Answer) if self.body.trim().is_empty() => {
+                // Logged with what did arrive: the failure is otherwise
+                // indistinguishable from the provider returning nothing at
+                // all, and the two want different fixes.
+                tracing::warn!(
+                    title = %self.title,
+                    buffered = self.buffer.trim().len(),
+                    "the model produced a header with no prose behind it"
+                );
+                (Vec::new(), None)
+            }
             Some(Kind::Answer) => {
                 let answer = self.body.trim().to_owned();
                 (

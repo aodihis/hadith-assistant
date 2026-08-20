@@ -199,8 +199,13 @@ async fn chat(cx: &Cx, Json(request): Json<ChatRequest>) -> Result<Sse<ChatEvent
         }
 
         let Some(reply) = reply else {
+            // Phrased for the reader rather than for a log. The turn is lost
+            // either way, but "internal error" tells them nothing and hides
+            // the one useful fact: asking again usually works.
             let error = failed.unwrap_or_else(|| {
-                AppError::Internal("the answer ended before it was complete".to_owned())
+                AppError::Internal(
+                    "the answer stopped before it was finished — please ask again".to_owned(),
+                )
             });
             tracing::warn!(%error, "chat turn produced no usable reply");
             yield Ok(error_event(&error));
