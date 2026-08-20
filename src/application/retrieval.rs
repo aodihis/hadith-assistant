@@ -81,9 +81,22 @@ impl RetrievalService {
             None => Vec::new(),
         };
 
+        // With a narration named, the supporting narrations are the ones like
+        // *it*, not the ones like the question. Searching on "explain Bukhari
+        // 3" matches text that merely mentions Bukhari — a Bulugh al-Maram
+        // fragment reading "and its origin is in Al-Bukhari" scores well and
+        // supports nothing.
+        let search_text = match pinned.first() {
+            Some(subject) => crate::ingestion::embedding::embedding_text(
+                &subject.arabic_text,
+                subject.english_text.as_deref(),
+            ),
+            None => query.query.clone(),
+        };
+
         let mut vectors = self
             .embedder
-            .embed_batch(std::slice::from_ref(&query.query))
+            .embed_batch(std::slice::from_ref(&search_text))
             .await?;
         let vector = vectors.pop().ok_or_else(|| {
             AppError::Internal("embedding provider returned no vector for the query".to_owned())
@@ -159,9 +172,18 @@ impl RetrievalService {
         let source = self.hadiths.find_by_id(hadith_id).await?;
         let limit = normalize_related_limit(limit);
 
+        // Composed the way the index was built. Embedding the stored Arabic
+        // directly searched with markup still in it and the translation left
+        // out, which is a different point in the space from the one this very
+        // narration occupies.
+        let source_text = crate::ingestion::embedding::embedding_text(
+            &source.arabic_text,
+            source.english_text.as_deref(),
+        );
+
         let mut vectors = self
             .embedder
-            .embed_batch(std::slice::from_ref(&source.arabic_text))
+            .embed_batch(std::slice::from_ref(&source_text))
             .await?;
         let vector = vectors.pop().ok_or_else(|| {
             AppError::Internal(

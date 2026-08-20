@@ -52,9 +52,19 @@ pub async fn embed_hadiths(
 /// clean prose. Embedding `<p>` tags spends tokens on markup and pushes every
 /// record toward a shared, meaningless direction in the vector space.
 fn hadith_embedding_text(hadith: &Hadith) -> String {
-    let arabic = to_plain_text(&hadith.arabic_text);
+    embedding_text(&hadith.arabic_text, hadith.english_text.as_deref())
+}
 
-    let full = match &hadith.english_text {
+/// Composes the text a narration is represented by in the vector space.
+///
+/// Public because a search *for narrations like this one* has to build its
+/// query the same way the index was built. Composed differently — markup left
+/// in, or the translation dropped — the query lands somewhere else in the space
+/// and the neighbours it finds are not the narration's neighbours.
+pub fn embedding_text(arabic: &str, english: Option<&str>) -> String {
+    let arabic = to_plain_text(arabic);
+
+    let full = match english {
         Some(english_text) if !english_text.trim().is_empty() => {
             format!("{}\n{}", arabic, to_plain_text(english_text))
         }
@@ -195,6 +205,37 @@ mod tests {
 
         assert_eq!(embedded, 0);
         assert!(vector_store.upsert_calls.lock().unwrap().is_empty());
+    }
+
+    /// A search for narrations like a given one builds its query with this,
+    /// so it has to produce exactly what the index was built from — markup
+    /// stripped, translation included.
+    #[test]
+    fn the_shared_composition_matches_what_the_index_holds() {
+        let hadith = hadith(1);
+
+        assert_eq!(
+            embedding_text(&hadith.arabic_text, hadith.english_text.as_deref()),
+            hadith_embedding_text(&hadith)
+        );
+    }
+
+    #[test]
+    fn composition_strips_markup_and_keeps_the_translation() {
+        let composed = embedding_text("<p>نص</p>", Some("<p>Actions are by intentions.</p>"));
+
+        assert!(!composed.contains('<'), "markup survived: {composed}");
+        assert!(composed.contains("نص"), "{composed}");
+        assert!(
+            composed.contains("Actions are by intentions."),
+            "{composed}"
+        );
+    }
+
+    #[test]
+    fn composition_falls_back_to_arabic_when_there_is_no_translation() {
+        assert_eq!(embedding_text("نص", None), "نص");
+        assert_eq!(embedding_text("نص", Some("   ")), "نص");
     }
 
     #[test]
