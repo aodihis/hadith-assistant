@@ -279,11 +279,56 @@ const COLLECTION_NAMES: &[(&str, &str)] = &[
     ("virtues", "Virtues of the Qur'an"),
 ];
 
-fn collection_name(slug: &str) -> &str {
+/// The published title for `slug`, or `None` where the work is not one we
+/// have a title for.
+fn collection_name(slug: &str) -> Option<&'static str> {
     COLLECTION_NAMES
         .iter()
         .find(|(key, _)| *key == slug)
-        .map_or(slug, |(_, name)| *name)
+        .map(|(_, name)| *name)
+}
+
+/// Summary of a metadata-only run.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MetadataSummary {
+    pub collections_seen: usize,
+    pub collections_renamed: usize,
+}
+
+/// Brings collection titles in line with [`COLLECTION_NAMES`] without touching
+/// any narration.
+///
+/// Titles are source metadata that changes far more often than the corpus, and
+/// re-importing 44,896 records to correct a name is absurd. Only collections
+/// already present are updated: a collection with no narrations in it would be
+/// an empty shelf.
+pub async fn sync_collection_metadata(database_url: &str) -> Result<MetadataSummary, ImportError> {
+    let pool = PgPoolOptions::new()
+        .max_connections(2)
+        .connect(database_url)
+        .await?;
+
+    let mut summary = MetadataSummary::default();
+
+    for (slug, name) in COLLECTION_NAMES {
+        let updated = sqlx::query(
+            r#"
+            UPDATE collections
+            SET name = $2, updated_at = now()
+            WHERE slug = $1 AND name IS DISTINCT FROM $2
+            "#,
+        )
+        .bind(slug)
+        .bind(name)
+        .execute(&pool)
+        .await?
+        .rows_affected();
+
+        summary.collections_seen += 1;
+        summary.collections_renamed += updated as usize;
+    }
+
+    Ok(summary)
 }
 
 async fn upsert_collection(
@@ -295,23 +340,23 @@ async fn upsert_collection(
     // that fills in names has nothing to update and the import then creates
     // them holding the raw key.
     //
-    // On conflict the name is only filled in where it still equals the slug,
-    // so a name curated by hand is never overwritten by a re-import.
+    // COLLECTION_NAMES is the source of truth, so a title we know is written on
+    // every import. A collection we have no title for keeps whatever name it
+    // has, since overwriting it with the raw key would be a downgrade.
+    let known = collection_name(collection);
     let id = sqlx::query_scalar::<_, i64>(
         r#"
         INSERT INTO collections (slug, name)
         VALUES ($1, $2)
         ON CONFLICT (slug) DO UPDATE
-        SET name = CASE
-                WHEN collections.name = collections.slug THEN EXCLUDED.name
-                ELSE collections.name
-            END,
+        SET name = CASE WHEN $3 THEN EXCLUDED.name ELSE collections.name END,
             updated_at = now()
         RETURNING id
         "#,
     )
     .bind(collection)
-    .bind(collection_name(collection))
+    .bind(known.unwrap_or(collection))
+    .bind(known.is_some())
     .fetch_one(&mut **tx)
     .await?;
 

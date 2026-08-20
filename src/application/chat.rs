@@ -153,16 +153,27 @@ pub fn render_narrations(hadiths: &[RetrievedHadith]) -> String {
     let mut block = String::new();
 
     for (index, hadith) in hadiths.iter().enumerate() {
-        // The number leading each entry is what the model cites with, so it is
-        // the one identifier it needs. The reference is given for grounding,
-        // but the model is told not to write it: the interface renders the
-        // citation from the record, so a reference cannot be misquoted.
+        // A record with no score was looked up because the question named it,
+        // rather than matched because it reads similarly. That distinction
+        // decides whether the narration is the subject of the answer or
+        // support for it, so the model is told which it is holding.
+        let named = if hadith.score.is_none() {
+            "  [the narration the question names]"
+        } else {
+            ""
+        };
+
+        // The leading number is what the model cites with, so it is the one
+        // identifier it needs. The reference is given for grounding, but the
+        // model is forbidden from writing it: the interface renders the
+        // citation from the record, so it cannot be misquoted.
         block.push_str(&format!(
-            "{}. {} {} (book {})\n",
+            "{}. {} {} (book {}){}\n",
             index + 1,
             hadith.collection_name,
             hadith.hadith_number,
-            hadith.book_number
+            hadith.book_number,
+            named
         ));
 
         if !hadith.english_grade.trim().is_empty() {
@@ -543,7 +554,13 @@ fn parse_title(first_line: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    fn retrieved(collection_name: &str, hadith_number: &str) -> RetrievedHadith {
+    /// `score` is what separates a similarity match from a record looked up
+    /// because the question named it, so it is the interesting parameter here.
+    fn retrieved(
+        collection_name: &str,
+        hadith_number: &str,
+        score: Option<f64>,
+    ) -> RetrievedHadith {
         RetrievedHadith {
             hadith_id: 1,
             collection: "bukhari".to_owned(),
@@ -555,7 +572,7 @@ mod tests {
             arabic_grade: "صحيح".to_owned(),
             english_grade: "Sahih".to_owned(),
             narrator: None,
-            score: None,
+            score,
         }
     }
 
@@ -565,15 +582,41 @@ mod tests {
     #[test]
     fn narrations_are_numbered_from_one_and_carry_the_published_title() {
         let block = render_narrations(&[
-            retrieved("Sahih al-Bukhari", "1"),
-            retrieved("Sahih Muslim", "1907"),
+            retrieved("Sahih al-Bukhari", "1", Some(0.4)),
+            retrieved("Sahih Muslim", "1907", Some(0.3)),
         ]);
 
         assert!(block.contains("1. Sahih al-Bukhari 1 (book 1)"), "{block}");
         assert!(block.contains("2. Sahih Muslim 1907 (book 1)"), "{block}");
+        // Both carry a score here, so neither is the named subject.
+        assert!(
+            !block.contains("the narration the question names"),
+            "{block}"
+        );
         // The slug is an internal identifier and would only invite the model to
         // echo it back into an answer.
         assert!(!block.contains("bukhari book"), "{block}");
+    }
+
+    /// A record with no score was looked up because the question named it. The
+    /// prompt turns on that marker to decide whether the narration is the
+    /// subject of the answer or support for it, so it has to be rendered.
+    #[test]
+    fn a_looked_up_narration_is_marked_as_the_one_the_question_names() {
+        let block = render_narrations(&[
+            retrieved("Sahih al-Bukhari", "3", None),
+            retrieved("Sahih Muslim", "1907", Some(0.31)),
+        ]);
+
+        assert!(
+            block.contains("1. Sahih al-Bukhari 3 (book 1)  [the narration the question names]"),
+            "{block}"
+        );
+        assert_eq!(
+            block.matches("the narration the question names").count(),
+            1,
+            "only the looked-up record is the subject:\n{block}"
+        );
     }
 
     fn limits() -> HistoryLimits {

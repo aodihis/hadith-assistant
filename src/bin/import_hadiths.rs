@@ -7,7 +7,9 @@ use sanad::infrastructure::embedding::OpenAiEmbedder;
 use sanad::infrastructure::persistence::hadiths::HadithRepository;
 use sanad::infrastructure::vector::{QdrantVectorStore, VectorStore};
 use sanad::ingestion::embedding::embed_hadiths;
-use sanad::ingestion::hadith_json::{ImportOptions, import_hadith_json, load_dump, validate_dump};
+use sanad::ingestion::hadith_json::{
+    ImportOptions, import_hadith_json, load_dump, sync_collection_metadata, validate_dump,
+};
 use sanad::ingestion::narrator_backfill::backfill_narrators;
 use sqlx::postgres::PgPoolOptions;
 
@@ -32,6 +34,17 @@ async fn run() -> Result<(), String> {
         .clone()
         .or_else(|| env::var("DATABASE_URL").ok())
         .ok_or("DATABASE_URL or --database-url is required unless --validate-only is used")?;
+
+    if args.update_metadata {
+        let summary = sync_collection_metadata(&database_url)
+            .await
+            .map_err(|error| error.to_string())?;
+        println!(
+            "collection metadata: {} known, {} renamed",
+            summary.collections_seen, summary.collections_renamed
+        );
+        return Ok(());
+    }
 
     if args.backfill_narrators {
         return run_backfill_narrators(&database_url)
@@ -294,6 +307,7 @@ struct Args {
     limit: Option<usize>,
     re_embed: bool,
     backfill_narrators: bool,
+    update_metadata: bool,
 }
 
 impl Args {
@@ -306,6 +320,7 @@ impl Args {
         let mut limit = None;
         let mut re_embed = false;
         let mut backfill_narrators = false;
+        let mut update_metadata = false;
 
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
@@ -338,6 +353,9 @@ impl Args {
                 "--backfill-narrators" => {
                     backfill_narrators = true;
                 }
+                "--update-metadata" => {
+                    update_metadata = true;
+                }
                 "-h" | "--help" => {
                     return Err(usage());
                 }
@@ -352,7 +370,16 @@ impl Args {
             }
         }
 
-        if backfill_narrators {
+        if update_metadata {
+            if json_path.is_some() {
+                return Err(format!(
+                    "--update-metadata takes no <json-path>
+
+{}",
+                    usage()
+                ));
+            }
+        } else if backfill_narrators {
             if json_path.is_some() {
                 return Err(format!(
                     "--backfill-narrators takes no <json-path>\n\n{}",
@@ -387,6 +414,7 @@ impl Args {
             limit,
             re_embed,
             backfill_narrators,
+            update_metadata,
         })
     }
 }
@@ -398,7 +426,8 @@ fn require_value(args: &mut impl Iterator<Item = String>, name: &str) -> Result<
 }
 
 fn usage() -> String {
-    "usage: import_hadiths <json-path> [--database-url <url>] [--validate-only] [--embed]\n       import_hadiths --embed-collection <slug> [--database-url <url>] [--limit <n>] [--re-embed]\n       import_hadiths --backfill-narrators [--database-url <url>]"
+    "usage: import_hadiths <json-path> [--database-url <url>] [--validate-only] [--embed]\n       import_hadiths --embed-collection <slug> [--database-url <url>] [--limit <n>] [--re-embed]\n       import_hadiths --backfill-narrators [--database-url <url>]
+       import_hadiths --update-metadata [--database-url <url>]"
         .to_owned()
 }
 
@@ -413,6 +442,26 @@ mod tests {
 
         assert!(args.embed);
         assert_eq!(args.json_path.as_deref(), Some("data/imports/hadiths.json"));
+    }
+
+    #[test]
+    fn parse_accepts_update_metadata_without_a_json_path() {
+        let args =
+            Args::parse(["--update-metadata".to_owned()]).expect("a metadata run needs no dump");
+
+        assert!(args.update_metadata);
+        assert!(args.json_path.is_none());
+    }
+
+    #[test]
+    fn parse_rejects_update_metadata_combined_with_a_json_path() {
+        let error = Args::parse([
+            "--update-metadata".to_owned(),
+            "data/imports/hadiths.json".to_owned(),
+        ])
+        .expect_err("a metadata run reads no dump, so a path is a mistake");
+
+        assert!(error.contains("--update-metadata takes no <json-path>"));
     }
 
     #[test]
