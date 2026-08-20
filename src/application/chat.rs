@@ -135,13 +135,79 @@ pub fn compose_retrieval_query(
         return message.trim().to_owned();
     };
 
-    let composed = format!("{}\n{}", previous.trim(), message.trim());
+    // "Summarize that" carries no topic of its own. Appending it to the
+    // anchor moves the query away from the point the previous turn retrieved
+    // at, so a different set of narrations comes back and the model — grounded
+    // in whatever it is handed — writes a fresh answer to the same question
+    // rather than going deeper on the one it already gave. Searching on the
+    // anchor alone reproduces the previous turn's evidence exactly, which is
+    // what "go further on this" actually asks for.
+    let composed = if is_meta_request(message) {
+        previous.trim().to_owned()
+    } else {
+        format!("{}\n{}", previous.trim(), message.trim())
+    };
 
     if composed.chars().count() <= max_chars {
         return composed;
     }
 
     composed.chars().take(max_chars).collect()
+}
+
+/// Stems of the words that ask for a reply *about the previous reply*.
+///
+/// Matched as prefixes so ordinary misspellings ("sumarize") and inflections
+/// ("summarised", "clarification") still land — a typo should not silently
+/// change which narrations the turn is answered from.
+const META_CUE_STEMS: &[&str] = &[
+    "summar", "sumar", "explain", "explanat", "elaborat", "clarif", "expand", "recap", "simplif",
+    "rephras", "restate", "detail", "brief", "concise", "condens", "overview", "gist", "tldr",
+    "mean", "short",
+];
+
+/// Words that may sit alongside a cue without giving the message a topic:
+/// pronouns and back-references, politeness and auxiliaries, and the generic
+/// nouns this domain uses for "the thing we were just discussing".
+const META_FILLER: &[&str] = &[
+    "a", "about", "again", "all", "an", "and", "answer", "are", "as", "at", "based", "be", "bit",
+    "both", "but", "by", "can", "could", "do", "does", "down", "earlier", "for", "from", "further",
+    "give", "hadith", "hadiths", "hadeeth", "have", "how", "i", "in", "into", "is", "it", "its",
+    "just", "last", "let", "little", "make", "me", "more", "my", "narration", "narrations", "of",
+    "on", "one", "only", "or", "part", "please", "point", "points", "previous", "reply", "report",
+    "reports", "said", "say", "some", "text", "texts", "than", "that", "the", "them", "these",
+    "they", "this", "those", "to", "tell", "up", "us", "was", "we", "were", "what", "with",
+    "would", "you", "your",
+];
+
+/// How long a message may be and still be read as a bare "go further" request.
+const MAX_META_REQUEST_WORDS: usize = 20;
+
+/// Whether a message asks for more on what was just answered rather than
+/// raising something new.
+///
+/// Deliberately conservative: a message qualifies only when it carries a cue
+/// *and* every other word in it is filler. "Explain the hadith about fasting"
+/// names a topic and so is treated as a fresh question, even though it opens
+/// with a cue — misreading a real question as a follow-up would answer it from
+/// the wrong narrations, which is the more damaging mistake of the two.
+pub fn is_meta_request(message: &str) -> bool {
+    let words: Vec<String> = message
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(|word| word.to_lowercase())
+        .collect();
+
+    if words.is_empty() || words.len() > MAX_META_REQUEST_WORDS {
+        return false;
+    }
+
+    let is_cue = |word: &str| META_CUE_STEMS.iter().any(|stem| word.starts_with(stem));
+
+    words.iter().any(|word| is_cue(word))
+        && words
+            .iter()
+            .all(|word| is_cue(word) || META_FILLER.contains(&word.as_str()))
 }
 
 /// Renders retrieved narrations for the prompt.
@@ -758,6 +824,46 @@ mod tests {
         let query = compose_retrieval_query(&history, "short", 100);
 
         assert_eq!(query.chars().count(), 100);
+    }
+
+    #[test]
+    fn a_request_to_go_further_retrieves_on_the_anchor_alone() {
+        let mut history = history_of(1);
+        history.turns[0].question = "How did the Prophet perform the prayer?".to_owned();
+
+        for message in [
+            "Can you sumarize for me based on those hadiths",
+            "Please explain that in more detail",
+            "What does that mean?",
+            "Summarise",
+        ] {
+            assert_eq!(
+                compose_retrieval_query(&history, message, 400),
+                "How did the Prophet perform the prayer?",
+                "{message:?} names no topic, so appending it would retrieve at a \
+                 different point than the turn it is asking about"
+            );
+        }
+    }
+
+    #[test]
+    fn a_follow_up_that_names_a_topic_is_still_anchored_rather_than_replaced() {
+        let mut history = history_of(1);
+        history.turns[0].question = "How did the Prophet perform the prayer?".to_owned();
+
+        for message in [
+            "Explain the hadith about fasting",
+            "Tell me more about wudu",
+            "Can you summarize what the narrations say about zakat?",
+        ] {
+            let query = compose_retrieval_query(&history, message, 400);
+
+            assert!(
+                query.contains(message),
+                "{message:?} raises a new subject, so dropping it would answer the \
+                 wrong question"
+            );
+        }
     }
 
     #[test]
