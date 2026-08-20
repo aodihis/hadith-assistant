@@ -153,12 +153,16 @@ pub fn render_narrations(hadiths: &[RetrievedHadith]) -> String {
     let mut block = String::new();
 
     for (index, hadith) in hadiths.iter().enumerate() {
+        // The number leading each entry is what the model cites with, so it is
+        // the one identifier it needs. The reference is given for grounding,
+        // but the model is told not to write it: the interface renders the
+        // citation from the record, so a reference cannot be misquoted.
         block.push_str(&format!(
-            "{}. {} book {}, hadith {}\n",
+            "{}. {} {} (book {})\n",
             index + 1,
-            hadith.collection,
-            hadith.book_number,
-            hadith.hadith_number
+            hadith.collection_name,
+            hadith.hadith_number,
+            hadith.book_number
         ));
 
         if !hadith.english_grade.trim().is_empty() {
@@ -538,6 +542,39 @@ fn parse_title(first_line: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn retrieved(collection_name: &str, hadith_number: &str) -> RetrievedHadith {
+        RetrievedHadith {
+            hadith_id: 1,
+            collection: "bukhari".to_owned(),
+            collection_name: collection_name.to_owned(),
+            book_number: "1".to_owned(),
+            hadith_number: hadith_number.to_owned(),
+            arabic_text: "نص".to_owned(),
+            english_text: Some("Actions are but by intentions.".to_owned()),
+            arabic_grade: "صحيح".to_owned(),
+            english_grade: "Sahih".to_owned(),
+            narrator: None,
+            score: None,
+        }
+    }
+
+    /// The leading number is what the model cites with, and the prompt forbids
+    /// it from writing the reference itself, so both have to be present and the
+    /// numbering has to start at one.
+    #[test]
+    fn narrations_are_numbered_from_one_and_carry_the_published_title() {
+        let block = render_narrations(&[
+            retrieved("Sahih al-Bukhari", "1"),
+            retrieved("Sahih Muslim", "1907"),
+        ]);
+
+        assert!(block.contains("1. Sahih al-Bukhari 1 (book 1)"), "{block}");
+        assert!(block.contains("2. Sahih Muslim 1907 (book 1)"), "{block}");
+        // The slug is an internal identifier and would only invite the model to
+        // echo it back into an answer.
+        assert!(!block.contains("bukhari book"), "{block}");
+    }
 
     fn limits() -> HistoryLimits {
         HistoryLimits {

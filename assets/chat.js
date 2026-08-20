@@ -195,6 +195,50 @@
     return `${hadith.collection_name || hadith.collection} ${hadith.hadith_number}`;
   }
 
+  // Renders the answer, turning the model's [n] markers into links.
+  //
+  // The model writes only the number; the reference itself is built here from
+  // the retrieved record, so it cannot cite a narration that was not retrieved
+  // and cannot misspell one that was. A marker with no matching citation — [4]
+  // where three were retrieved — is left as plain text rather than linked, so
+  // the failure is visible instead of pointing somewhere wrong.
+  const CITATION = /\[(\d+)\]/g;
+
+  function appendAnswerText(parent, text, citations) {
+    for (const paragraph of (text || "").split("\n")) {
+      const trimmed = paragraph.trim();
+      if (!trimmed) continue;
+
+      const p = el("p");
+      let last = 0;
+
+      for (const match of trimmed.matchAll(CITATION)) {
+        const hadith = citations[Number(match[1]) - 1];
+        const before = trimmed.slice(last, match.index);
+        if (before) p.append(document.createTextNode(before));
+
+        if (hadith) {
+          const cite = el("button", "chat-cite", hadithRef(hadith));
+          cite.type = "button";
+          cite.dataset.action = "open-hadith";
+          // The handler reads the id from the nearest element carrying it, and
+          // `closest` starts at the element itself, so the marker needs no
+          // wrapping card.
+          cite.dataset.hadithId = String(hadith.hadith_id);
+          p.append(cite);
+        } else {
+          p.append(document.createTextNode(match[0]));
+        }
+        last = match.index + match[0].length;
+      }
+
+      const rest = trimmed.slice(last);
+      if (rest) p.append(document.createTextNode(rest));
+
+      parent.append(p);
+    }
+  }
+
   function toggleText(id, button) {
     const card = button.closest(".chat-card");
     const body = card && card.querySelector(".chat-narration");
@@ -253,10 +297,7 @@
     if (turn.title) answer.append(el("h2", null, turn.title));
 
     const body = el("div", "chat-answer-body");
-    for (const paragraph of (turn.text || "").split("\n")) {
-      const trimmed = paragraph.trim();
-      if (trimmed) body.append(el("p", null, trimmed));
-    }
+    appendAnswerText(body, turn.text, turn.citations || []);
     answer.append(body);
 
     if (turn.refused) {

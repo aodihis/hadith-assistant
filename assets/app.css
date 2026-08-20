@@ -600,6 +600,29 @@ body:has(.chat-app) {
   line-height: 1.75;
 }
 
+/* An inline citation, built from the retrieved record rather than written by
+   the model. Set as a reference inside the sentence rather than as a button:
+   it should be reachable without interrupting the prose. */
+.chat-cite {
+  padding: 0 0.1rem;
+  border: 0;
+  border-bottom: 1px solid var(--sage);
+  background: none;
+  color: var(--green-deep);
+  font: inherit;
+  font-size: 0.94em;
+  font-weight: 700;
+  line-height: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chat-cite:hover,
+.chat-cite:focus-visible {
+  background: var(--green-light);
+  border-bottom-color: var(--green-deep);
+}
+
 .chat-answer.is-refusal .chat-answer-body p {
   color: var(--muted);
   font-style: italic;
