@@ -69,6 +69,18 @@ impl RetrievalService {
     pub async fn retrieve(&self, query: RetrievalQuery) -> Result<RetrievalResult, AppError> {
         let query = validate_query(query)?;
 
+        // A question that names a hadith outright is answered by looking that
+        // hadith up. Similarity search would be guessing at something the
+        // reader stated exactly, and it is quite capable of returning a
+        // different narration that merely reads alike.
+        //
+        // The named record is pinned to the front; similarity still runs, so
+        // the narrations that speak to it come along behind it as support.
+        let pinned = match crate::application::reference::parse_reference_in_query(&query.query) {
+            Some(reference) => self.resolve_reference(&reference).await?,
+            None => Vec::new(),
+        };
+
         let mut vectors = self
             .embedder
             .embed_batch(std::slice::from_ref(&query.query))
@@ -88,12 +100,55 @@ impl RetrievalService {
         // is handed.
         let matches = filter_by_score(matches, self.min_score);
 
-        let results = self.resolve_matches(matches).await?;
+        let mut results = self.resolve_matches(matches).await?;
+
+        // The named record leads, and is removed from the similarity results so
+        // it is not offered twice.
+        if !pinned.is_empty() {
+            let pinned_ids: Vec<i64> = pinned.iter().map(|hadith| hadith.hadith_id).collect();
+            results.retain(|hadith| !pinned_ids.contains(&hadith.hadith_id));
+            let mut ordered = pinned;
+            ordered.append(&mut results);
+            results = ordered;
+        }
 
         Ok(RetrievalResult {
             query: query.query,
             results,
         })
+    }
+
+    /// Looks up the record a question named outright.
+    ///
+    /// A reference that matches nothing yields no rows rather than an error:
+    /// the reader may have mistyped a number, and similarity search still has a
+    /// chance of finding what they meant.
+    async fn resolve_reference(
+        &self,
+        reference: &crate::application::reference::HadithReference,
+    ) -> Result<Vec<RetrievedHadith>, AppError> {
+        let hadiths = self
+            .hadiths
+            .list(&crate::domain::HadithSearch {
+                collection: Some(reference.collection.clone()),
+                book_number: None,
+                hadith_number: Some(reference.hadith_number.clone()),
+                grade: None,
+                // A number can repeat across books within one collection, and
+                // all of them are the reference the reader gave.
+                limit: 3,
+                offset: 0,
+            })
+            .await?;
+
+        if hadiths.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let ids: Vec<i64> = hadiths.iter().map(|hadith| hadith.id).collect();
+        let narrators = self.narrators.find_primary_by_hadith_ids(&ids).await?;
+
+        Ok(assemble_records(hadiths, narrators))
     }
 
     pub async fn find_related(
@@ -184,27 +239,51 @@ fn assemble(
             continue;
         };
 
-        results.push(RetrievedHadith {
-            hadith_id: hadith.id,
-            collection: hadith.collection,
-            collection_name: hadith.collection_name,
-            book_number: hadith.book_number,
-            hadith_number: hadith.hadith_number,
-            arabic_text: hadith.arabic_text,
-            english_text: hadith.english_text,
-            arabic_grade: hadith.arabic_grade,
-            english_grade: hadith.english_grade,
-            narrator: narrators
-                .remove(&candidate.hadith_id)
-                .map(|narrator| NarratorRef {
-                    name: narrator.name,
-                    role: narrator.role,
-                }),
-            score: Some(candidate.score as f64),
-        });
+        let narrator = narrators.remove(&candidate.hadith_id);
+        results.push(to_retrieved(hadith, narrator, Some(candidate.score as f64)));
     }
 
     results
+}
+
+/// Assembles records that were looked up rather than matched.
+///
+/// They carry no score: nothing measured how close they are to the question,
+/// because the question named them.
+fn assemble_records(
+    hadiths: Vec<Hadith>,
+    mut narrators: HashMap<i64, Narrator>,
+) -> Vec<RetrievedHadith> {
+    hadiths
+        .into_iter()
+        .map(|hadith| {
+            let narrator = narrators.remove(&hadith.id);
+            to_retrieved(hadith, narrator, None)
+        })
+        .collect()
+}
+
+/// Builds the retrieval DTO for one record.
+///
+/// Shared by both assemblers so a looked-up record and a similarity match
+/// cannot drift in what they carry; only the score differs.
+fn to_retrieved(hadith: Hadith, narrator: Option<Narrator>, score: Option<f64>) -> RetrievedHadith {
+    RetrievedHadith {
+        hadith_id: hadith.id,
+        collection: hadith.collection,
+        collection_name: hadith.collection_name,
+        book_number: hadith.book_number,
+        hadith_number: hadith.hadith_number,
+        arabic_text: hadith.arabic_text,
+        english_text: hadith.english_text,
+        arabic_grade: hadith.arabic_grade,
+        english_grade: hadith.english_grade,
+        narrator: narrator.map(|narrator| NarratorRef {
+            name: narrator.name,
+            role: narrator.role,
+        }),
+        score,
+    }
 }
 
 fn filter_by_score(matches: Vec<VectorMatch>, min_score: f64) -> Vec<VectorMatch> {

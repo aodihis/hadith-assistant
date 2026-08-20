@@ -4,6 +4,7 @@ mod collections;
 mod conversation;
 mod hadiths;
 mod question;
+mod reference;
 mod retrieval;
 mod session;
 
