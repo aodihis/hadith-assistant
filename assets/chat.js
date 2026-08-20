@@ -19,7 +19,7 @@
   const region = (name) => app.querySelector(`[data-region="${name}"]`);
   const transcriptEl = region("transcript");
   const composer = region("composer");
-  const input = composer.querySelector("input");
+  const input = composer.querySelector("textarea");
   const sendButton = composer.querySelector('[data-bind="send"]');
   // The glyph lives in its own span so the pending state can swap it without
   // clearing the button's accessible name.
@@ -36,11 +36,11 @@
     history: null,
     transcript: [],
     pending: false,
-    // Which citation cards are showing their full text. Held here rather than
-    // read off the DOM because `repaint` rebuilds every card from scratch on
-    // each streamed delta, which would otherwise collapse a card the reader
-    // had just opened.
-    expanded: new Set(),
+    // Every narration the reader has been shown a reference to, by id.
+    //
+    // A related narration reached through the drawer is not in the transcript,
+    // so looking only there left its reference dead on click.
+    seen: new Map(),
     // The narration staged for the next question, or null.
     replyTo: null,
   };
@@ -99,6 +99,16 @@
     }, 2200);
   }
 
+  // Height is set from content because a textarea does not grow on its own.
+  // Reset to auto first: scrollHeight only shrinks once the box is smaller
+  // than its content.
+  const COMPOSER_MAX_PX = 160;
+
+  function resizeComposer() {
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, COMPOSER_MAX_PX)}px`;
+  }
+
   function setPending(pending) {
     state.pending = pending;
     input.disabled = pending;
@@ -140,56 +150,28 @@
     }
   }
 
-  function citationCard(hadith, turnIndex) {
-    const card = el("article", "chat-card");
-    card.dataset.hadithId = String(hadith.hadith_id);
-    // Keyed by turn as well as narration, so opening a card does not open
-    // every later citation of the same narration.
-    const key = `${turnIndex}:${hadith.hadith_id}`;
+  // A narration as a reference that opens it, rather than as a card.
+  //
+  // The drawer is where a narration is read: it has the room for the full
+  // Arabic, the translation, the grading and the related narrations. Repeating
+  // all of that inline buried the answer under the sources it was built from,
+  // and gave the same narration two different presentations.
+  function referenceLink(hadith) {
+    remember(hadith);
 
-    const meta = el("div", "chat-card-meta");
-    meta.append(el("span", "collection", hadith.collection_name || hadith.collection));
-    meta.append(
-      el("span", null, `Book ${hadith.book_number} · Hadith ${hadith.hadith_number}`),
-    );
+    const link = el("button", "chat-cite", hadithRef(hadith));
+    link.type = "button";
+    link.dataset.action = "open-hadith";
+    link.dataset.hadithId = String(hadith.hadith_id);
+    return link;
+  }
 
-    const grade = gradeLabel(hadith);
-    if (grade) meta.append(el("span", "chat-grade", grade));
-    card.append(meta);
-
-    // Collapsed by default: a card carrying the full Arabic and the full
-    // translation crowds out the answer it is supporting, and several of them
-    // in one turn push it off screen entirely. The translation is what most
-    // readers scan, so that is what stays visible.
-    const open = state.expanded.has(key);
-    const body = el("div", open ? "chat-narration" : "chat-narration is-collapsed");
-    appendNarrationText(body, hadith);
-    card.append(body);
-
-    const toggle = el("button", "chat-expand", open ? "Show less" : "Show full text");
-    toggle.type = "button";
-    toggle.dataset.action = "toggle-text";
-    toggle.dataset.expandKey = key;
-    toggle.setAttribute("aria-expanded", String(open));
-    card.append(toggle);
-
-    const foot = el("div", "chat-card-foot");
-    if (hadith.narrator) {
-      foot.append(el("span", null, `Narrated by ${hadith.narrator.name}`));
-    }
-
-    const reply = el("button", "chat-link", "↩ Ask about this");
-    reply.type = "button";
-    reply.dataset.action = "reply-hadith";
-    foot.append(reply);
-
-    const view = el("button", "chat-link", "View & related →");
-    view.type = "button";
-    view.dataset.action = "open-hadith";
-    foot.append(view);
-
-    card.append(foot);
-    return card;
+  /// Appends `hadiths` as a comma-separated run of reference links.
+  function appendReferences(parent, hadiths) {
+    hadiths.forEach((hadith, index) => {
+      if (index > 0) parent.append(document.createTextNode(", "));
+      parent.append(referenceLink(hadith));
+    });
   }
 
   // The canonical citation: collection title plus hadith number, the same form
@@ -259,20 +241,6 @@
     }
   }
 
-  function toggleText(button) {
-    const card = button.closest(".chat-card");
-    const body = card && card.querySelector(".chat-narration");
-    const key = button.dataset.expandKey;
-    if (!body || !key) return;
-
-    const open = body.classList.toggle("is-collapsed") === false;
-    if (open) state.expanded.add(key);
-    else state.expanded.delete(key);
-
-    button.textContent = open ? "Show less" : "Show full text";
-    button.setAttribute("aria-expanded", String(open));
-  }
-
   function stageReply(id) {
     const hadith = findHadith(id);
     if (!hadith) return;
@@ -302,7 +270,7 @@
     replyEl.hidden = false;
   }
 
-  function renderTurn(turn, index) {
+  function renderTurn(turn) {
     const wrap = el("div", "chat-turn");
 
     const question = el("div", "chat-question");
@@ -325,22 +293,20 @@
       answer.classList.add("is-refusal");
     }
 
-    // Cards are the fallback, not the default. Where the answer cites inline,
-    // every narration it used is already named in the prose and one click from
-    // being read in full, so repeating them underneath as cards buries the
-    // answer under the sources it is built from.
-    const citedInline = resolvedCitations(turn.text, turn.citations || []).size > 0;
+    // Only when the answer cited nothing itself. Otherwise every narration it
+    // used is already named in the prose and one click from being read, and
+    // listing them again underneath says the same thing twice.
+    const citations = turn.citations || [];
+    const citedInline = resolvedCitations(turn.text, citations).size > 0;
 
-    if (turn.citations && turn.citations.length && !citedInline) {
-      const label = el(
-        "p",
-        "chat-cite-label",
-        `${turn.citations.length} narration${turn.citations.length === 1 ? "" : "s"} found`,
-      );
-      answer.append(label);
-      const list = el("div", "chat-cards");
-      for (const hadith of turn.citations) list.append(citationCard(hadith, index));
-      answer.append(list);
+    if (citations.length && !citedInline) {
+      answer.append(el("p", "chat-cite-label", "Narrations found"));
+      const refs = el("p", "chat-references");
+      appendReferences(refs, citations);
+      answer.append(refs);
+    } else {
+      // Reachable by reference even when the prose cites only some of them.
+      citations.forEach(remember);
     }
 
     wrap.append(answer);
@@ -366,7 +332,7 @@
     const follow = force || atBottom();
 
     transcriptEl.replaceChildren();
-    state.transcript.forEach((turn, i) => transcriptEl.append(renderTurn(turn, i)));
+    for (const turn of state.transcript) transcriptEl.append(renderTurn(turn));
     app.dataset.chatState = state.transcript.length ? "active" : "empty";
 
     if (follow) transcriptEl.scrollTop = transcriptEl.scrollHeight;
@@ -414,6 +380,7 @@
 
     setPending(true);
     input.value = "";
+    resizeComposer();
 
     // The staged narration rides along on the turn so the transcript can show
     // it, and the composer is cleared either way. It is not sent to the server
@@ -489,13 +456,17 @@
 
   // ---------------------------------------------------------------- drawer
 
+  function remember(hadith) {
+    state.seen.set(hadith.hadith_id, hadith);
+  }
+
   function findHadith(id) {
     for (const turn of state.transcript) {
       for (const hadith of turn.citations || []) {
         if (hadith.hadith_id === id) return hadith;
       }
     }
-    return null;
+    return state.seen.get(id) || null;
   }
 
   async function openDrawer(id) {
@@ -508,12 +479,24 @@
     backdrop.hidden = false;
 
     const head = el("div");
-    head.append(el("p", "chat-source", `${hadith.collection} ${hadith.book_number}:${hadith.hadith_number}`));
+    // The canonical citation, not the internal slug and book:number form.
+    head.append(el("p", "chat-source", hadithRef(hadith)));
+    head.append(
+      el("p", "chat-muted", `Book ${hadith.book_number} · Hadith ${hadith.hadith_number}`),
+    );
     const grade = gradeLabel(hadith);
     if (grade) head.append(el("p", "chat-grade", grade));
 
     appendNarrationText(head, hadith);
     if (hadith.narrator) head.append(el("p", "chat-muted", `Narrated by ${hadith.narrator.name}`));
+
+    // Moved here from the citation card: this is where the narration is read,
+    // so it is where deciding to ask about it belongs.
+    const ask = el("button", "chat-link", "↩ Ask about this");
+    ask.type = "button";
+    ask.dataset.action = "reply-hadith";
+    ask.dataset.hadithId = String(hadith.hadith_id);
+    head.append(ask);
 
     drawerBody.replaceChildren(head);
 
@@ -524,9 +507,9 @@
       const related = body.related || [];
       if (related.length) {
         drawerBody.append(el("h3", null, "Related narrations"));
-        const list = el("div", "chat-cards");
-        for (const item of related) list.append(citationCard(item));
-        drawerBody.append(list);
+        const refs = el("p", "chat-references");
+        appendReferences(refs, related);
+        drawerBody.append(refs);
       }
     } catch {
       drawerBody.append(el("p", "chat-muted", "Related narrations are unavailable right now."));
@@ -541,6 +524,20 @@
   // ---------------------------------------------------------------- events
 
   composer.addEventListener("submit", (event) => {
+    event.preventDefault();
+    ask(input.value);
+  });
+
+  input.addEventListener("input", resizeComposer);
+
+  // Enter sends, Shift+Enter opens a line. A textarea does neither by default:
+  // Enter would only insert a newline, and the form would never submit.
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.shiftKey) return;
+    // Mid-composition Enter is the IME accepting a candidate, not the reader
+    // sending — swallowing it there would lose the word being written.
+    if (event.isComposing) return;
+
     event.preventDefault();
     ask(input.value);
   });
@@ -561,9 +558,6 @@
     switch (action.dataset.action) {
       case "open-hadith":
         openDrawer(id);
-        break;
-      case "toggle-text":
-        toggleText(action);
         break;
       case "reply-hadith":
         stageReply(id);

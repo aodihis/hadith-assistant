@@ -637,33 +637,11 @@ body:has(.chat-app) {
   text-transform: uppercase;
 }
 
-.chat-cards {
-  display: grid;
-  gap: 0.85rem;
-}
-
-.chat-card {
-  padding: 1.1rem 1.25rem;
-  border: 1px solid rgba(30, 43, 33, 0.13);
-  border-left: 3px solid var(--sage);
-  border-radius: 0.35rem;
-  background: var(--sanad-surface);
-}
-
-.chat-card-meta,
-.chat-card-foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.7rem;
-  color: var(--muted);
-  font-size: 0.78rem;
-}
-
-.chat-card-foot {
-  margin-top: 0.9rem;
-  padding-top: 0.7rem;
-  border-top: 1px solid rgba(30, 43, 33, 0.08);
+/* A run of narration references, comma separated, reading as a sentence
+   rather than as a list of boxes. */
+.chat-references {
+  margin: 0;
+  line-height: 2;
 }
 
 .chat-grade {
@@ -675,18 +653,15 @@ body:has(.chat-app) {
 }
 
 .chat-link {
-  margin-left: auto;
+  display: inline-block;
+  margin-top: 1rem;
+  padding: 0;
   border: 0;
   background: none;
   color: var(--sanad-accent);
   font: inherit;
   font-size: 0.78rem;
   cursor: pointer;
-}
-
-.chat-card .arabic {
-  margin: 1rem 0;
-  font-size: clamp(1.2rem, 2.4vw, 1.6rem);
 }
 
 /* The drawer is a fixed ~31rem column, so the viewport-relative size the page
@@ -696,35 +671,6 @@ body:has(.chat-app) {
   margin: 1rem 0;
   font-size: 1.125rem;
   line-height: 2.2;
-}
-
-/* A citation card opens collapsed: the translation is what most readers scan,
-   and several cards carrying full Arabic plus full English push the answer
-   they support off the screen. */
-.chat-narration.is-collapsed .arabic {
-  display: none;
-}
-
-.chat-narration.is-collapsed .translation {
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.chat-expand {
-  margin-top: 0.5rem;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--green-deep);
-  font: inherit;
-  font-size: 0.78rem;
-  font-weight: 700;
-  cursor: pointer;
-  text-underline-offset: 0.2rem;
-  text-decoration: underline;
 }
 
 /* The narration staged for the next question, sitting above the field the way
@@ -821,7 +767,7 @@ body:has(.chat-app) {
   box-shadow: 0 0 0 3px rgba(83, 125, 93, 0.14);
 }
 
-.chat-composer input {
+.chat-composer textarea {
   flex: 1;
   min-width: 0;
   padding: 0.5rem 0;
@@ -830,10 +776,22 @@ body:has(.chat-app) {
   color: inherit;
   font: inherit;
   font-size: 0.95rem;
+  line-height: 1.5;
+  /* Height is driven from content by chat.js, so neither the drag handle nor a
+     scrollbar should appear until the growth cap is reached. */
+  resize: none;
+  overflow-y: auto;
+  max-height: 10rem;
 }
 
-.chat-composer input:focus {
+.chat-composer textarea:focus {
   outline: none;
+}
+
+/* The send control stays with the last line rather than centring against a
+   box that grows upward. */
+.chat-composer-field {
+  align-items: flex-end;
 }
 
 .chat-send {
@@ -891,14 +849,28 @@ body:has(.chat-app) {
   color: var(--sanad-green);
 }
 
+/* A bare glyph rather than a boxed control: the drawer already has an edge and
+   a backdrop, so a second box around the × was one border too many. Centred
+   with flex, since a lone character does not sit centred in its own line box. */
 .chat-drawer-head button {
-  border: 1px solid rgba(30, 43, 33, 0.16);
-  border-radius: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 2rem;
   height: 2rem;
-  background: var(--sanad-surface);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--muted);
   font: inherit;
+  font-size: 1.4rem;
+  line-height: 1;
   cursor: pointer;
+}
+
+.chat-drawer-head button:hover {
+  color: var(--ink);
 }
 
 .chat-drawer-body {

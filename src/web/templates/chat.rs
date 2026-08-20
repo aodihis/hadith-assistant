@@ -79,14 +79,17 @@ pub(crate) async fn chat_view() -> Result {
                 // sitting side by side as two controls, so the composer reads
                 // as a single place to type.
                 <div class="chat-composer-field">
-                    <input
+                    // A textarea rather than an input so Shift+Enter can open a
+                    // line. Enter still sends; chat.js owns that distinction,
+                    // and grows the box to fit what has been typed.
+                    <textarea
                         id="chat-input"
-                        type="text"
                         name="message"
+                        rows="1"
                         autocomplete="off"
                         aria-label="Your question"
                         placeholder="Ask about a topic from the narrations…"
-                    >
+                    ></textarea>
                     <button
                         class="chat-send"
                         type="submit"
