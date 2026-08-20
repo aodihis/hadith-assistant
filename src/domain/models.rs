@@ -13,6 +13,9 @@ pub struct Hadith {
     pub id: i64,
     pub collection_id: i64,
     pub collection: String,
+    /// The work's published title, for display and citation. `collection`
+    /// stays the slug, which is what filters and URLs match on.
+    pub collection_name: String,
     pub book_number: String,
     pub bab_id: f64,
     pub english_bab_number: Option<String>,
@@ -62,6 +65,9 @@ pub struct NarratorRef {
 pub struct RetrievedHadith {
     pub hadith_id: i64,
     pub collection: String,
+    /// The work's published title, used to build the citation shown to the
+    /// reader. `collection` stays the slug the vector store filters on.
+    pub collection_name: String,
     pub book_number: String,
     pub hadith_number: String,
     pub arabic_text: String,

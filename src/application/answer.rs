@@ -203,6 +203,7 @@ mod tests {
         RetrievedHadith {
             hadith_id: 1,
             collection: "bukhari".to_owned(),
+            collection_name: "Sahih al-Bukhari".to_owned(),
             book_number: "1".to_owned(),
             hadith_number: "1".to_owned(),
             arabic_text: "إنما الأعمال بالنيات".to_owned(),

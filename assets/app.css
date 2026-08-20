@@ -309,13 +309,16 @@ footer a {
   margin-left: auto;
 }
 
+/* The badge holds a work's published title now, not a slug, so it is set as a
+   name rather than shouted: uppercasing "Sahih al-Bukhari" loses the
+   capitalisation that makes it read as a title. */
 .collection {
   padding: 0.3rem 0.55rem;
   border-radius: 0;
   color: var(--green-deep);
   background: var(--green-light);
-  font-weight: 800;
-  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 
 .arabic {

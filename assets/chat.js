@@ -145,7 +145,7 @@
     card.dataset.hadithId = String(hadith.hadith_id);
 
     const meta = el("div", "chat-card-meta");
-    meta.append(el("span", "collection", hadith.collection));
+    meta.append(el("span", "collection", hadith.collection_name || hadith.collection));
     meta.append(
       el("span", null, `Book ${hadith.book_number} · Hadith ${hadith.hadith_number}`),
     );
@@ -188,9 +188,11 @@
     return card;
   }
 
-  /// Reference shown on a staged narration and on the turn it produced.
+  // The canonical citation: collection title plus hadith number, the same form
+  // sunnah.com prints as its reference. The book number is a secondary
+  // reference and belongs in the drawer rather than in a citation.
   function hadithRef(hadith) {
-    return `${hadith.collection} · Book ${hadith.book_number} · Hadith ${hadith.hadith_number}`;
+    return `${hadith.collection_name || hadith.collection} ${hadith.hadith_number}`;
   }
 
   function toggleText(id, button) {

@@ -191,7 +191,7 @@ pub(crate) async fn hadith_list_view(page: HadithPage) -> Result {
                     for hadith in page.hadiths {
                         <article class="hadith-card">
                             <div class="hadith-meta">
-                                <span class="collection">(hadith.collection)</span>
+                                <span class="collection">(hadith.collection_name)</span>
                                 <span>
                                     "Book "
                                     (hadith.book_number)

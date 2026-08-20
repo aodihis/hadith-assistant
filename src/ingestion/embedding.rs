@@ -151,6 +151,7 @@ mod tests {
             id,
             collection_id: 1,
             collection: "bukhari".to_owned(),
+            collection_name: "Sahih al-Bukhari".to_owned(),
             book_number: "1".to_owned(),
             bab_id: 1.0,
             english_bab_number: None,

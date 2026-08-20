@@ -251,20 +251,67 @@ async fn insert_record(
     Ok(id)
 }
 
+/// The established title of each work, keyed by the source dump's collection
+/// key.
+///
+/// These are the names the collections are published under, not anything
+/// invented: a guess at the title of a religious work would be worse than
+/// showing the raw key. A collection missing from this list keeps its key as
+/// its name, which is honest rather than wrong.
+///
+/// Mirrored by migration 0005, which fixes databases whose collections were
+/// created before this existed. The two lists must agree.
+const COLLECTION_NAMES: &[(&str, &str)] = &[
+    ("bukhari", "Sahih al-Bukhari"),
+    ("muslim", "Sahih Muslim"),
+    ("nasai", "Sunan an-Nasa'i"),
+    ("abudawud", "Sunan Abi Dawud"),
+    ("tirmidhi", "Jami` at-Tirmidhi"),
+    ("ibnmajah", "Sunan Ibn Majah"),
+    ("ahmad", "Musnad Ahmad"),
+    ("adab", "Al-Adab Al-Mufrad"),
+    ("shamail", "Ash-Shama'il Al-Muhammadiyah"),
+    ("bulugh", "Bulugh al-Maram"),
+    ("mishkat", "Mishkat al-Masabih"),
+    ("riyadussalihin", "Riyad as-Salihin"),
+    ("hisn", "Hisn al-Muslim"),
+    ("forty", "40 Hadith an-Nawawi"),
+    ("virtues", "Virtues of the Qur'an"),
+];
+
+fn collection_name(slug: &str) -> &str {
+    COLLECTION_NAMES
+        .iter()
+        .find(|(key, _)| *key == slug)
+        .map_or(slug, |(_, name)| *name)
+}
+
 async fn upsert_collection(
     tx: &mut Transaction<'_, Postgres>,
     collection: &str,
 ) -> Result<i64, ImportError> {
+    // The name is set here rather than left to a migration: on a fresh
+    // database the migrations run before any collection exists, so a migration
+    // that fills in names has nothing to update and the import then creates
+    // them holding the raw key.
+    //
+    // On conflict the name is only filled in where it still equals the slug,
+    // so a name curated by hand is never overwritten by a re-import.
     let id = sqlx::query_scalar::<_, i64>(
         r#"
         INSERT INTO collections (slug, name)
-        VALUES ($1, $1)
+        VALUES ($1, $2)
         ON CONFLICT (slug) DO UPDATE
-        SET updated_at = now()
+        SET name = CASE
+                WHEN collections.name = collections.slug THEN EXCLUDED.name
+                ELSE collections.name
+            END,
+            updated_at = now()
         RETURNING id
         "#,
     )
     .bind(collection)
+    .bind(collection_name(collection))
     .fetch_one(&mut **tx)
     .await?;
 

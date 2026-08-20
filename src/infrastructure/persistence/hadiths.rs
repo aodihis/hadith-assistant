@@ -169,6 +169,7 @@ const HADITH_SELECT: &str = r#"
         h.id,
         h.collection_id,
         c.slug AS collection,
+        c.name AS collection_name,
         h.book_number,
         h.bab_id,
         h.english_bab_number,
