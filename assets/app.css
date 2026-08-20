@@ -324,9 +324,11 @@ footer a {
 .arabic {
   margin: 2rem 0;
   font-family: Amiri, "Noto Naskh Arabic", "Segoe UI", serif;
-  /* Amiri sets smaller and taller than Noto Naskh at the same size, so it gets
-     a nudge up and extra leading to keep the diacritics clear of each other. */
-  font-size: clamp(1.65rem, 3.2vw, 2.3rem);
+  /* Fixed rather than viewport-relative: the browse listing shows many
+     narrations at once and is read by scanning down them, so the Arabic wants
+     a steady size rather than one that swells on a wide screen. The leading
+     stays generous — Amiri's diacritics need the room. */
+  font-size: 1.4375rem;
   line-height: 2.1;
 }
 
