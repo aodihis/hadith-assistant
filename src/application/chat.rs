@@ -168,6 +168,7 @@ const META_CUE_STEMS: &[&str] = &[
 /// Words that may sit alongside a cue without giving the message a topic:
 /// pronouns and back-references, politeness and auxiliaries, and the generic
 /// nouns this domain uses for "the thing we were just discussing".
+#[rustfmt::skip]
 const META_FILLER: &[&str] = &[
     "a", "about", "again", "all", "an", "and", "answer", "are", "as", "at", "based", "be", "bit",
     "both", "but", "by", "can", "could", "do", "does", "down", "earlier", "for", "from", "further",
