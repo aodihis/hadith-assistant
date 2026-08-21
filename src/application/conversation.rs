@@ -135,7 +135,7 @@ impl ConversationService {
         reply: &ChatReply,
     ) -> (ConversationHistory, bool) {
         let (answer, refused) = match reply {
-            ChatReply::Answered(answer) => (answer.answer.clone(), false),
+            ChatReply::Answered(answer) => (answer.clone(), false),
             ChatReply::Refused { message, .. } => (message.clone(), true),
         };
 
@@ -194,7 +194,6 @@ mod tests {
     use async_trait::async_trait;
 
     use super::*;
-    use crate::application::Answer;
 
     struct ScriptedCompleter {
         responses: Mutex<Vec<Result<String, ()>>>,
@@ -319,10 +318,7 @@ mod tests {
     }
 
     fn answered(text: &str) -> ChatReply {
-        ChatReply::Answered(Answer {
-            title: "T".to_owned(),
-            answer: text.to_owned(),
-        })
+        ChatReply::Answered(text.to_owned())
     }
 
     fn history_of(count: usize) -> ConversationHistory {

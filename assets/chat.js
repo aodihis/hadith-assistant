@@ -200,44 +200,111 @@
     return found;
   }
 
-  function appendAnswerText(parent, text, citations) {
-    for (const paragraph of (text || "").split("\n")) {
-      const trimmed = paragraph.trim();
-      if (!trimmed) continue;
+  // The subset of Markdown the model is told it may use. An answer that walks
+  // through the steps of something reads far better as a list than as one block
+  // of prose, and a bolded lead-in is what makes the steps findable — but the
+  // syntax has to be turned into elements to be worth anything, or the reader
+  // just sees the asterisks.
+  //
+  // Bold is tried before italics at each position, so `**x**` is never read as
+  // an empty italic. A bullet needs whitespace after its marker, which is what
+  // keeps `**During the prayer:**` from parsing as a list item.
+  const EMPHASIS = /\*\*([^*]+)\*\*|\*([^*\n]+)\*/g;
+  const BULLET = /^[-*+]\s+(.*)$/;
+  const NUMBERED = /^\d+[.)]\s+(.*)$/;
 
-      const p = el("p");
-      let last = 0;
+  // Nothing here ever assigns markup. Emphasis and list structure become real
+  // elements built with createElement, so model output stays text throughout.
+  function appendCited(parent, text, citations) {
+    let last = 0;
 
-      for (const match of trimmed.matchAll(CITATION)) {
-        const hadith = citations[Number(match[1]) - 1];
-        const before = trimmed.slice(last, match.index);
-        if (before) p.append(document.createTextNode(before));
+    for (const match of text.matchAll(CITATION)) {
+      const hadith = citations[Number(match[1]) - 1];
+      const before = text.slice(last, match.index);
+      if (before) parent.append(document.createTextNode(before));
 
-        // `[1][2]` arrives with nothing between the markers, which renders as
-        // two references run together. They are a list, so they read as one.
-        if (!before && p.lastChild && p.lastChild.classList?.contains("chat-cite")) {
-          p.append(document.createTextNode(", "));
-        }
-
-        if (hadith) {
-          const cite = el("button", "chat-cite", hadithRef(hadith));
-          cite.type = "button";
-          cite.dataset.action = "open-hadith";
-          // The handler reads the id from the nearest element carrying it, and
-          // `closest` starts at the element itself, so the marker needs no
-          // wrapping card.
-          cite.dataset.hadithId = String(hadith.hadith_id);
-          p.append(cite);
-        } else {
-          p.append(document.createTextNode(match[0]));
-        }
-        last = match.index + match[0].length;
+      // `[1][2]` arrives with nothing between the markers, which renders as
+      // two references run together. They are a list, so they read as one.
+      if (!before && parent.lastChild && parent.lastChild.classList?.contains("chat-cite")) {
+        parent.append(document.createTextNode(", "));
       }
 
-      const rest = trimmed.slice(last);
-      if (rest) p.append(document.createTextNode(rest));
+      if (hadith) {
+        const cite = el("button", "chat-cite", hadithRef(hadith));
+        cite.type = "button";
+        cite.dataset.action = "open-hadith";
+        // The handler reads the id from the nearest element carrying it, and
+        // `closest` starts at the element itself, so the marker needs no
+        // wrapping card.
+        cite.dataset.hadithId = String(hadith.hadith_id);
+        parent.append(cite);
+      } else {
+        parent.append(document.createTextNode(match[0]));
+      }
+      last = match.index + match[0].length;
+    }
 
-      parent.append(p);
+    const rest = text.slice(last);
+    if (rest) parent.append(document.createTextNode(rest));
+  }
+
+  // Emphasis first, then citations within each span: a marker inside a bolded
+  // lead-in has to stay a working reference rather than becoming literal text.
+  function appendInline(parent, text, citations) {
+    let last = 0;
+
+    for (const match of text.matchAll(EMPHASIS)) {
+      const before = text.slice(last, match.index);
+      if (before) appendCited(parent, before, citations);
+
+      const bold = match[1];
+      const span = el(bold ? "strong" : "em");
+      appendCited(span, bold || match[2], citations);
+      parent.append(span);
+
+      last = match.index + match[0].length;
+    }
+
+    const rest = text.slice(last);
+    if (rest) appendCited(parent, rest, citations);
+  }
+
+  function appendAnswerText(parent, text, citations) {
+    // The list currently being filled, so consecutive items land in one list
+    // rather than each becoming a list of its own. A blank line, a paragraph,
+    // or a switch between bulleted and numbered closes it.
+    let list = null;
+    let listTag = null;
+
+    for (const line of (text || "").split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        list = null;
+        continue;
+      }
+
+      const bullet = trimmed.match(BULLET);
+      const numbered = bullet ? null : trimmed.match(NUMBERED);
+      const item = bullet ? bullet[1] : numbered ? numbered[1] : null;
+
+      if (item === null) {
+        list = null;
+        const p = el("p");
+        appendInline(p, trimmed, citations);
+        parent.append(p);
+        continue;
+      }
+
+      const tag = bullet ? "ul" : "ol";
+      if (!list || listTag !== tag) {
+        list = el(tag, "chat-answer-list");
+        listTag = tag;
+        parent.append(list);
+      }
+
+      const li = el("li");
+      appendInline(li, item, citations);
+      list.append(li);
     }
   }
 
@@ -283,7 +350,6 @@
     wrap.append(question);
 
     const answer = el("div", "chat-answer");
-    if (turn.title) answer.append(el("h2", null, turn.title));
 
     const body = el("div", "chat-answer-body");
     appendAnswerText(body, turn.text, turn.citations || []);
@@ -389,7 +455,7 @@
     clearReply();
 
     // Shown immediately; committed to history only when `memory` arrives.
-    const turn = { question, title: "", text: "", citations: [], refused: false, replyTo };
+    const turn = { question, text: "", citations: [], refused: false, replyTo };
     state.transcript.push(turn);
     // Forced: the reader just asked, so showing them their own question is
     // what they expect, wherever they had scrolled to.
@@ -410,15 +476,12 @@
       let committed = false;
 
       for await (const [name, payload] of readEvents(response)) {
-        if (name === "title") {
-          turn.title = payload.title || "";
-        } else if (name === "citations") {
+        if (name === "citations") {
           turn.citations = payload.citations || [];
         } else if (name === "delta") {
           turn.text += payload.text || "";
         } else if (name === "refusal") {
           turn.refused = true;
-          turn.title = "";
           turn.text = payload.message || "";
           turn.citations = [];
         } else if (name === "memory") {
@@ -427,7 +490,6 @@
           committed = true;
         } else if (name === "error") {
           turn.refused = true;
-          turn.title = "";
           turn.text = payload.message || "Something went wrong.";
           turn.citations = [];
           if (payload.code === "session_expired") {

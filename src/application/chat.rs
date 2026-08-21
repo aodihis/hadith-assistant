@@ -1,4 +1,3 @@
-use crate::application::Answer;
 use crate::domain::RetrievedHadith;
 use crate::error::AppError;
 use crate::infrastructure::completion::ChatMessage;
@@ -307,7 +306,8 @@ impl RefusalReason {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChatReply {
-    Answered(Answer),
+    /// The answer prose, as the reader saw it.
+    Answered(String),
     Refused {
         reason: RefusalReason,
         message: String,
@@ -437,9 +437,11 @@ pub fn build_compaction_messages(
 /// tested without a socket.
 #[derive(Debug, Clone, PartialEq)]
 pub enum StreamEvent {
-    /// The turn is an answer. Citations are released alongside this, never
-    /// before — see `ReplyAssembler`.
-    Title(String),
+    /// The turn is an answer. Citations are released on this, never before —
+    /// see `ReplyAssembler`. It carries nothing itself: the reply is prose from
+    /// its first word, and the moment it is known to be prose is the only
+    /// information here.
+    Answered,
     /// A chunk of answer prose, already stripped of the protocol scaffold.
     Delta(String),
     /// The turn is a refusal. Carries no citations, by design.
@@ -451,14 +453,14 @@ pub enum StreamEvent {
 
 /// Turns raw model deltas into ordered events.
 ///
-/// The model's first line declares the turn: `Title: …` for an answer,
-/// `Refusal: …` for a decline. Everything is buffered until that line is
+/// A decline opens with `Refusal: …`; anything else is an answer, and is prose
+/// from its first word. Everything is buffered until that first line is
 /// complete, which does three jobs at once:
 ///
 /// 1. Citations are withheld until the turn is known to be an answer, so a
 ///    refusal never flashes hadith cards on screen and then retracts them.
-/// 2. The `Title:` / `Refusal:` scaffold never reaches the reader — forwarding
-///    raw deltas would print it verbatim.
+/// 2. The `Refusal:` scaffold never reaches the reader — forwarding raw deltas
+///    would print it verbatim.
 /// 3. A refusal message is delivered whole rather than typed out.
 ///
 /// The first line is short, so this costs a fraction of a second, not the whole
@@ -474,7 +476,6 @@ pub enum StreamEvent {
 pub struct ReplyAssembler {
     buffer: String,
     kind: Option<Kind>,
-    title: String,
     body: String,
 }
 
@@ -536,19 +537,22 @@ impl ReplyAssembler {
         self.kind = Some(Kind::Answer);
         self.buffer = String::new();
 
-        let prose = match parse_title(first_line) {
-            Some(title) => {
-                self.title = title;
-                rest.trim_start_matches(['\n', '\r']).to_owned()
-            }
-            // No header we recognise: the model went straight into prose. The
-            // first line is answer text, not scaffold, so it is kept — dropping
-            // it would silently truncate the answer.
-            None if rest.is_empty() => first_line.to_owned(),
-            None => format!("{first_line}\n{rest}"),
+        let prose = if is_stray_title(first_line) {
+            // Answers no longer carry a title, but a model that has seen a
+            // million of them will occasionally write one anyway. Dropping the
+            // line is better than printing "Title: …" at the top of the reply;
+            // nothing is lost, because whatever it says the prose repeats.
+            rest.trim_start_matches(['\n', '\r']).to_owned()
+        } else if rest.is_empty() {
+            // The ordinary case: the reply is prose from its first word, so the
+            // first line is answer text and keeping it is what stops the answer
+            // being silently truncated.
+            first_line.to_owned()
+        } else {
+            format!("{first_line}\n{rest}")
         };
 
-        let mut events = vec![StreamEvent::Title(self.title.clone())];
+        let mut events = vec![StreamEvent::Answered];
         if !prose.is_empty() {
             self.body.push_str(&prose);
             events.push(StreamEvent::Delta(prose));
@@ -597,7 +601,6 @@ impl ReplyAssembler {
                 // indistinguishable from the provider returning nothing at
                 // all, and the two want different fixes.
                 tracing::warn!(
-                    title = %self.title,
                     buffered = self.buffer.trim().len(),
                     "the model produced a header with no prose behind it"
                 );
@@ -605,26 +608,16 @@ impl ReplyAssembler {
             }
             Some(Kind::Answer) => {
                 let answer = self.body.trim().to_owned();
-                (
-                    events,
-                    Some(ChatReply::Answered(Answer {
-                        title: self.title,
-                        answer,
-                    })),
-                )
+                (events, Some(ChatReply::Answered(answer)))
             }
             None => (events, None),
         }
     }
 }
 
-fn parse_title(first_line: &str) -> Option<String> {
-    let title = strip_label(first_line, "Title")?;
-    if title.is_empty() {
-        return None;
-    }
-
-    Some(title.to_owned())
+/// Whether a first line is a leftover `Title:` header rather than answer prose.
+fn is_stray_title(first_line: &str) -> bool {
+    strip_label(first_line, "Title").is_some_and(|title| !title.is_empty())
 }
 
 #[cfg(test)]
@@ -920,11 +913,11 @@ mod tests {
     #[test]
     fn the_assembler_reads_the_answer_shape() {
         assert_eq!(
-            reply_of(&["Title: Kindness\nBe gentle with others."]),
-            Some(ChatReply::Answered(Answer {
-                title: "Kindness".to_owned(),
-                answer: "Be gentle with others.".to_owned(),
-            }))
+            reply_of(&["Be gentle with others.\nIt is reported of the Prophet."]),
+            Some(ChatReply::Answered(
+                "Be gentle with others.\nIt is reported of the Prophet.".to_owned()
+            )),
+            "an answer is prose from its first word, so no line of it is scaffold"
         );
     }
 
@@ -984,7 +977,7 @@ mod tests {
         assert!(
             !events
                 .iter()
-                .any(|event| matches!(event, StreamEvent::Title(_))),
+                .any(|event| matches!(event, StreamEvent::Answered)),
             "a refusal must never release citations"
         );
     }
@@ -1003,39 +996,44 @@ mod tests {
     }
 
     #[test]
-    fn markdown_around_the_header_does_not_change_the_turn() {
-        assert_eq!(
-            reply_of(&["**Title:** Mercy\nBe merciful to others."]),
-            Some(ChatReply::Answered(Answer {
-                title: "Mercy".to_owned(),
-                answer: "Be merciful to others.".to_owned(),
-            }))
-        );
+    fn a_title_the_model_wrote_out_of_habit_is_dropped_rather_than_printed() {
+        for raw in [
+            "Title: Mercy\nBe merciful to others.",
+            "**Title:** Mercy\nBe merciful to others.",
+            "## Title: Mercy\nBe merciful to others.",
+        ] {
+            assert_eq!(
+                reply_of(&[raw]),
+                Some(ChatReply::Answered("Be merciful to others.".to_owned())),
+                "answers carry no title, so a stray one is scaffold rather than prose"
+            );
+        }
     }
 
     #[test]
-    fn streaming_emits_the_title_before_any_prose() {
-        let events = feed(&["Title: Sincerity\nActions are ", "judged by intentions."]);
+    fn streaming_announces_the_answer_before_any_prose() {
+        let events = feed(&["Actions are judged\nby ", "intentions."]);
 
         assert_eq!(
             events,
             vec![
-                StreamEvent::Title("Sincerity".to_owned()),
-                StreamEvent::Delta("Actions are ".to_owned()),
-                StreamEvent::Delta("judged by intentions.".to_owned()),
-            ]
+                StreamEvent::Answered,
+                StreamEvent::Delta("Actions are judged\nby ".to_owned()),
+                StreamEvent::Delta("intentions.".to_owned()),
+            ],
+            "citations ride on the first event, so it must precede every delta"
         );
     }
 
     #[test]
     fn streaming_never_leaks_the_protocol_scaffold_into_the_prose() {
-        // The header arrives split across chunks, which is the normal case.
+        // A stray header arrives split across chunks, which is the normal case.
         let events = feed(&["Tit", "le: Mer", "cy\nBe merci", "ful."]);
 
         assert_eq!(
             events,
             vec![
-                StreamEvent::Title("Mercy".to_owned()),
+                StreamEvent::Answered,
                 StreamEvent::Delta("Be merci".to_owned()),
                 StreamEvent::Delta("ful.".to_owned()),
             ]
@@ -1075,14 +1073,12 @@ mod tests {
 
     #[test]
     fn unrecognised_output_streams_as_prose_without_losing_its_first_line() {
-        // The header line is only scaffold when it parses as one. Otherwise it
-        // is answer text, and dropping it would truncate the reply silently.
         let events = feed(&["some unexpected shape\nwith a body"]);
 
         assert_eq!(
             events,
             vec![
-                StreamEvent::Title(String::new()),
+                StreamEvent::Answered,
                 StreamEvent::Delta("some unexpected shape\nwith a body".to_owned()),
             ]
         );
@@ -1092,10 +1088,9 @@ mod tests {
     fn a_single_line_answer_that_never_sent_a_newline_is_still_delivered() {
         assert_eq!(
             reply_of(&["Actions are judged by intentions."]),
-            Some(ChatReply::Answered(Answer {
-                title: String::new(),
-                answer: "Actions are judged by intentions.".to_owned(),
-            }))
+            Some(ChatReply::Answered(
+                "Actions are judged by intentions.".to_owned()
+            ))
         );
     }
 }

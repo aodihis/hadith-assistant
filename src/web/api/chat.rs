@@ -254,18 +254,20 @@ fn render(
     citations_sent: &mut bool,
 ) -> Vec<Event> {
     match event {
-        StreamEvent::Title(title) => {
-            let mut events = vec![sse_event("title", serde_json::json!({ "title": title }))];
-
-            if !*citations_sent {
-                *citations_sent = true;
-                events.push(sse_event(
-                    "citations",
-                    serde_json::json!({ "citations": citations }),
-                ));
+        // The turn is an answer, which is the moment its citations become
+        // safe to send. Nothing else goes on the wire for it: the frame the
+        // client needs is the citations frame, and an empty marker beside it
+        // would only be a frame to ignore.
+        StreamEvent::Answered => {
+            if *citations_sent {
+                return Vec::new();
             }
+            *citations_sent = true;
 
-            events
+            vec![sse_event(
+                "citations",
+                serde_json::json!({ "citations": citations }),
+            )]
         }
         StreamEvent::Delta(text) => {
             vec![sse_event("delta", serde_json::json!({ "text": text }))]

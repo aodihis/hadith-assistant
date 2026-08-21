@@ -593,13 +593,34 @@ body:has(.chat-app) {
   background: var(--sanad-green);
 }
 
-.chat-answer h2 {
-  margin: 0 0 0.6rem;
-  font-size: 1.5rem;
-}
-
 .chat-answer-body p {
   line-height: 1.75;
+}
+
+/* A bolded lead-in is what makes a step findable, so it is set apart from the
+   sentence it opens rather than merely made heavier. */
+.chat-answer-body strong {
+  color: var(--green-deep);
+  font-weight: 700;
+}
+
+/* Transliterated Arabic, italicised on first use. */
+.chat-answer-body em {
+  font-style: italic;
+}
+
+.chat-answer-list {
+  margin: 0.6rem 0;
+  padding-left: 1.4rem;
+  line-height: 1.75;
+}
+
+.chat-answer-list li {
+  margin-bottom: 0.35rem;
+}
+
+.chat-answer-list li:last-child {
+  margin-bottom: 0;
 }
 
 /* An inline citation, built from the retrieved record rather than written by
