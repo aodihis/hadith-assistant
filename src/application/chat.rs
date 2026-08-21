@@ -1,7 +1,7 @@
 use crate::domain::RetrievedHadith;
 use crate::error::AppError;
 use crate::infrastructure::completion::ChatMessage;
-use crate::text::to_plain_text;
+use crate::text::{grade_text, to_plain_text};
 
 pub const CHAT_SYSTEM_PROMPT: &str = include_str!("../../prompts/chat_system.md");
 pub const COMPACTION_SYSTEM_PROMPT: &str = include_str!("../../prompts/compaction_system.md");
@@ -242,8 +242,12 @@ pub fn render_narrations(hadiths: &[RetrievedHadith]) -> String {
             named
         ));
 
-        if !hadith.english_grade.trim().is_empty() {
-            block.push_str(&format!("Grade: {}\n", hadith.english_grade.trim()));
+        // Normalised for the same reason the text is: a grade stored as a JSON
+        // array of gradings would otherwise reach the model as braces, and the
+        // prompt requires it to report the grade exactly as given.
+        let grade = grade_text(&hadith.english_grade);
+        if !grade.is_empty() {
+            block.push_str(&format!("Grade: {grade}\n"));
         }
         if let Some(narrator) = &hadith.narrator {
             block.push_str(&format!("Narrated by: {}\n", narrator.name));

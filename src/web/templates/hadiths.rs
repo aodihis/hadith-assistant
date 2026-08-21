@@ -4,7 +4,7 @@ use topcoat::{
 };
 
 use crate::domain::{Collection, Hadith};
-use crate::text::to_plain_text;
+use crate::text::{grade_text, to_plain_text};
 
 use super::layout::site_chrome;
 
@@ -224,20 +224,26 @@ pub(crate) async fn hadith_list_view(page: HadithPage) -> Result {
                             // never recorded. The row goes entirely when
                             // neither is present, so the card does not end on
                             // an empty strip.
-                            if !hadith.arabic_grade.trim().is_empty()
-                                || !hadith.english_grade.trim().is_empty()
+                            // A few thousand records store the grade as a JSON
+                            // array of gradings rather than a bare label, so
+                            // the value is rendered through `grade_text` the
+                            // same way the narration text goes through
+                            // `to_plain_text` — the stored record keeps its
+                            // source form, only the display is cleaned.
+                            if !grade_text(&hadith.arabic_grade).is_empty()
+                                || !grade_text(&hadith.english_grade).is_empty()
                             {
                                 <div class="grades">
-                                    if !hadith.arabic_grade.trim().is_empty() {
+                                    if !grade_text(&hadith.arabic_grade).is_empty() {
                                         <span>
                                             "Arabic grade: "
-                                            (hadith.arabic_grade)
+                                            (grade_text(&hadith.arabic_grade))
                                         </span>
                                     }
-                                    if !hadith.english_grade.trim().is_empty() {
+                                    if !grade_text(&hadith.english_grade).is_empty() {
                                         <span>
                                             "English grade: "
-                                            (hadith.english_grade)
+                                            (grade_text(&hadith.english_grade))
                                         </span>
                                     }
                                 </div>

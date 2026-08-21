@@ -100,6 +100,64 @@ fn collapse_whitespace(text: &str) -> String {
     paragraphs.join("\n")
 }
 
+/// One scholar's grading, as the source stores it when a record carries more
+/// than a bare label.
+#[derive(serde::Deserialize)]
+struct SourceGrade {
+    grade: String,
+    graded_by: Option<String>,
+    /// The source's own ordering weight, highest first. Absent in some records,
+    /// which then sort last rather than failing to parse.
+    #[serde(default)]
+    priority: i64,
+}
+
+/// Renders a stored grade the way a reader can use it.
+///
+/// Most records hold a bare label — "Sahih". Around 4,700 instead hold a JSON
+/// array of gradings, one per scholar, which reaches the page as a wall of
+/// braces if it is passed through untouched.
+///
+/// Anything that does not parse as that array comes back as it was. Forty-odd
+/// records hold prose that merely opens with a bracket, and prose is already
+/// readable — guessing at it would lose more than it fixed.
+pub fn grade_text(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if !trimmed.starts_with('[') {
+        return trimmed.to_owned();
+    }
+
+    let Ok(mut gradings) = serde_json::from_str::<Vec<SourceGrade>>(trimmed) else {
+        return trimmed.to_owned();
+    };
+
+    // Scholars disagree, and a record carrying two gradings is carrying both on
+    // purpose. Showing only the first would present one scholar's reading as
+    // the grade, so all of them are kept, in the source's own order of weight.
+    gradings.sort_by_key(|grading| std::cmp::Reverse(grading.priority));
+
+    gradings
+        .iter()
+        .filter_map(|grading| {
+            let grade = grading.grade.trim();
+            if grade.is_empty() {
+                return None;
+            }
+
+            match grading
+                .graded_by
+                .as_deref()
+                .map(str::trim)
+                .filter(|by| !by.is_empty())
+            {
+                Some(by) => Some(format!("{grade} — {by}")),
+                None => Some(grade.to_owned()),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -176,5 +234,53 @@ mod tests {
             to_plain_text("<p>إِنَّمَا الأَعْمَالُ بِالنِّيَّاتِ</p>"),
             "إِنَّمَا الأَعْمَالُ بِالنِّيَّاتِ"
         );
+    }
+
+    #[test]
+    fn a_bare_grade_label_is_left_alone() {
+        assert_eq!(grade_text("  Sahih  "), "Sahih");
+        assert_eq!(grade_text(""), "");
+    }
+
+    #[test]
+    fn a_structured_grade_is_rendered_as_a_grade_and_its_scholar() {
+        let raw = r#"[{"graded_by": "Al-Albani", "grade": "Da`if (Weak)", "priority": 40}]"#;
+
+        assert_eq!(grade_text(raw), "Da`if (Weak) — Al-Albani");
+    }
+
+    #[test]
+    fn every_scholars_grading_is_kept_in_the_sources_order_of_weight() {
+        // Deliberately supplied lowest-priority first: scholars disagree, and
+        // showing only the first would present one reading as the grade.
+        let raw = r#"[
+            {"graded_by": "Darussalam", "grade": "Hasan", "priority": 40},
+            {"graded_by": "Al-Albani", "grade": "Sahih", "priority": 50}
+        ]"#;
+
+        assert_eq!(grade_text(raw), "Sahih — Al-Albani; Hasan — Darussalam");
+    }
+
+    #[test]
+    fn prose_that_merely_opens_with_a_bracket_survives_untouched() {
+        let raw = "[Hasan lighairihi; this isnad is da'eef}";
+
+        assert_eq!(grade_text(raw), raw);
+    }
+
+    #[test]
+    fn a_grading_with_no_scholar_named_is_rendered_as_the_grade_alone() {
+        let raw = r#"[{"grade": "Sahih", "priority": 50}]"#;
+
+        assert_eq!(grade_text(raw), "Sahih");
+    }
+
+    #[test]
+    fn an_array_holding_no_usable_grade_renders_as_nothing() {
+        // So the caller's "hide it when blank" check catches it, rather than
+        // the page showing a label with an empty list after it.
+        let raw = r#"[{"graded_by": "Al-Albani", "grade": "  ", "priority": 50}]"#;
+
+        assert_eq!(grade_text(raw), "");
     }
 }

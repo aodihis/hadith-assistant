@@ -127,9 +127,38 @@
 
   // ---------------------------------------------------------------- rendering
 
+  // A few thousand records store the grade as a JSON array of gradings — one
+  // per scholar — rather than a bare label, and the API serves the stored form.
+  // Anything that does not parse as that array is returned as it was: some
+  // records hold prose that merely opens with a bracket, and prose is already
+  // readable. Mirrors `grade_text` in src/text.rs; the two must agree.
   function gradeLabel(hadith) {
     const grade = (hadith.english_grade || "").trim();
-    return grade || null;
+    if (!grade.startsWith("[")) return grade || null;
+
+    let gradings;
+    try {
+      gradings = JSON.parse(grade);
+    } catch {
+      return grade;
+    }
+    if (!Array.isArray(gradings)) return grade;
+
+    const rendered = gradings
+      // Scholars disagree, and a record carrying two gradings carries both on
+      // purpose, so all of them are kept in the source's order of weight.
+      .slice()
+      .sort((a, b) => (b?.priority || 0) - (a?.priority || 0))
+      .map((grading) => {
+        const label = (grading?.grade || "").trim();
+        if (!label) return null;
+        const by = (grading?.graded_by || "").trim();
+        return by ? `${label} — ${by}` : label;
+      })
+      .filter(Boolean)
+      .join("; ");
+
+    return rendered || null;
   }
 
   // Appends the narration text itself — Arabic, then translation.
