@@ -443,7 +443,12 @@ body:has(.chat-app) {
   --sanad-accent: #6b6a33;
   display: flex;
   flex-direction: column;
+  /* `100vh` on a phone is the viewport with the browser toolbars retracted,
+     so the composer sits under the toolbar until the reader scrolls. `dvh`
+     tracks what is actually visible; the `vh` above it is the fallback for
+     browsers that do not know the unit. */
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background: var(--sanad-paper);
 }
@@ -564,10 +569,23 @@ body:has(.chat-app) {
   background: transparent;
 }
 
-/* The hero scrolls with the transcript region rather than above it, so an
-   empty chat centres and a busy one does not push the composer off screen. */
+/* The hero is the entire empty state, and `.chat-app` clips what does not fit
+   in 100vh. On a short screen — an iPhone 7 is 667px tall, of which the header
+   and composer take a fifth — the hero is taller than the space left for it,
+   so the suggestions and the disclaimer were cut off with no way to reach
+   them. It takes the free space and scrolls inside it instead.
+   `min-height: 0` is what lets a flex item shrink below its content; without
+   it the item keeps its full height and the clipping comes back. */
 .chat-hero {
-  flex: none;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Nothing is in the transcript yet, and a `flex: 1` sibling competing for the
+   same space is what squeezed the hero in the first place. */
+.chat-app[data-chat-state="empty"] .chat-transcript {
+  display: none;
 }
 
 .chat-turn {
@@ -921,4 +939,32 @@ body:has(.chat-app) {
   color: #ffffff;
   background: #1e2b21;
   font-size: 0.85rem;
+}
+
+/* The empty state on a phone. Every value here buys vertical room: the hero
+   still scrolls if it has to, but on a 667px screen it now fits, and the
+   suggestion chips — the thing the page is asking the reader to use — sit
+   above the fold rather than below it. */
+@media (max-width: 760px) {
+  .chat-hero {
+    padding: 1.5rem 0 1rem;
+  }
+
+  .chat-hero h1 {
+    font-size: clamp(1.5rem, 6vw, 2.1rem);
+  }
+
+  .chat-lead {
+    margin-top: 0.75rem;
+    font-size: 0.9rem;
+    line-height: 1.6;
+  }
+
+  .chat-suggestions {
+    margin-top: 1.1rem;
+  }
+
+  .chat-disclaimer {
+    margin-top: 1.5rem;
+  }
 }

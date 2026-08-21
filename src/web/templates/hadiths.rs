@@ -218,16 +218,30 @@ pub(crate) async fn hadith_list_view(page: HadithPage) -> Result {
                                     }
                                 </div>
                             }
-                            <div class="grades">
-                                <span>
-                                    "Arabic grade: "
-                                    (hadith.arabic_grade)
-                                </span>
-                                <span>
-                                    "English grade: "
-                                    (hadith.english_grade)
-                                </span>
-                            </div>
+                            // Not every record carries both gradings, and a
+                            // label with nothing after it reads as a grade
+                            // that failed to load rather than one the source
+                            // never recorded. The row goes entirely when
+                            // neither is present, so the card does not end on
+                            // an empty strip.
+                            if !hadith.arabic_grade.trim().is_empty()
+                                || !hadith.english_grade.trim().is_empty()
+                            {
+                                <div class="grades">
+                                    if !hadith.arabic_grade.trim().is_empty() {
+                                        <span>
+                                            "Arabic grade: "
+                                            (hadith.arabic_grade)
+                                        </span>
+                                    }
+                                    if !hadith.english_grade.trim().is_empty() {
+                                        <span>
+                                            "English grade: "
+                                            (hadith.english_grade)
+                                        </span>
+                                    }
+                                </div>
+                            }
                         </article>
                     }
                 }
